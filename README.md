@@ -23,7 +23,6 @@ No modules.
 |------|------|
 | [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_default_route_table) | resource |
 | [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_instance) | resource |
-| [oci_core_instance_console_connection.instance_console_connection](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_instance_console_connection) | resource |
 | [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_internet_gateway) | resource |
 | [oci_core_public_ip.public_ip](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_public_ip) | resource |
 | [oci_core_security_list.security_list](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_security_list) | resource |
@@ -31,6 +30,8 @@ No modules.
 | [oci_core_vcn.vcn](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_vcn) | resource |
 | [oci_core_volume.docker_volume](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_volume) | resource |
 | [oci_core_volume_attachment.docker_volume_attachment](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_volume_attachment) | resource |
+| [oci_core_volume_backup_policy.docker_volume_backup_policy](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_volume_backup_policy) | resource |
+| [oci_core_volume_backup_policy_assignment.docker_volume_backup_policy_assignment](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/resources/core_volume_backup_policy_assignment) | resource |
 | [oci_core_private_ips.instance_private_ip](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/data-sources/core_private_ips) | data source |
 | [oci_core_vnic.instance_vnic](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/data-sources/core_vnic) | data source |
 | [oci_core_vnic_attachments.instance_vnics](https://registry.terraform.io/providers/oracle/oci/5.14.0/docs/data-sources/core_vnic_attachments) | data source |
@@ -63,8 +64,6 @@ No modules.
 
 | Name | Description |
 |------|-------------|
-| <a name="output_connect_with_ssh"></a> [connect\_with\_ssh](#output\_connect\_with\_ssh) | The command to connect to the instance with SSH |
-| <a name="output_connect_with_vnc"></a> [connect\_with\_vnc](#output\_connect\_with\_vnc) | The command to connect to the instance with VNC |
 | <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The OCID of the instance |
 | <a name="output_private_ip"></a> [private\_ip](#output\_private\_ip) | The private IP of the instance |
 | <a name="output_public_ip"></a> [public\_ip](#output\_public\_ip) | The public IP of the instance |

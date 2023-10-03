@@ -158,9 +158,23 @@ resource "oci_core_volume_attachment" "docker_volume_attachment" {
   attachment_type = "paravirtualized"
 }
 
-resource "oci_core_instance_console_connection" "instance_console_connection" {
-  instance_id = oci_core_instance.instance.id
-  public_key  = var.ssh_public_key
+resource "oci_core_volume_backup_policy" "docker_volume_backup_policy" {
+  display_name   = "DockerVolumeBackupPolicy"
+  compartment_id = var.compartment_ocid
+
+  schedules {
+    backup_type       = "INCREMENTAL"
+    period            = "ONE_DAY"
+    hour_of_day       = "1"
+    offset_type       = "STRUCTURED"
+    retention_seconds = 432000
+    time_zone         = "REGIONAL_DATA_CENTER_TIME"
+  }
+}
+
+resource "oci_core_volume_backup_policy_assignment" "docker_volume_backup_policy_assignment" {
+  asset_id  = oci_core_volume.docker_volume.id
+  policy_id = oci_core_volume_backup_policy.docker_volume_backup_policy.id
 }
 
 data "oci_identity_availability_domain" "ad" {

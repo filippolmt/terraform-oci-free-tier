@@ -1,4 +1,9 @@
-# terraform-oci-free-tier
+Creating a Terraform Module for Oracle Cloud Free Tier Virtual Machine
+
+# Terraform Module: Oracle Cloud Free Tier Virtual Machine
+
+This Terraform module allows you to create a virtual machine (VM) on Oracle Cloud that falls within the Oracle Cloud Free Tier. By using this module, you can easily provision a VM with the necessary configurations while staying within the free usage limits.
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 

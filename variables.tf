@@ -6,6 +6,7 @@ variable "oracle_api_key_fingerprint" {
 variable "oracle_api_private_key_path" {
   type        = string
   description = "The path to the private key"
+  default     = "~/.oci/oci_api_key.pem"
 }
 
 variable "ssh_public_key" {

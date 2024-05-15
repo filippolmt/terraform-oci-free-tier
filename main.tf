@@ -148,7 +148,6 @@ resource "oci_core_volume" "docker_volume" {
   compartment_id      = var.compartment_ocid
   availability_domain = data.oci_identity_availability_domain.ad.name
   size_in_gbs         = var.instance_shape_docker_volume_size_in_gbs
-
 }
 
 resource "oci_core_volume_attachment" "docker_volume_attachment" {
@@ -193,19 +192,3 @@ data "oci_core_vnic_attachments" "instance_vnics" {
 data "oci_core_vnic" "instance_vnic" {
   vnic_id = lookup(data.oci_core_vnic_attachments.instance_vnics.vnic_attachments[0], "vnic_id")
 }
-
-
-
-# resource "null_resource" "cloud_init_watcher_provisioner" {
-#   triggers = {
-#     state = "RUNNING"
-#   }
-
-#   connection {
-#     type        = "ssh"
-#     host        = oci_core_instance.instance.public_ip
-#     user        = "ubuntu"
-#     port        = "22"
-#     private_key = file(var.ssh_private_key_path)
-#   }
-# }

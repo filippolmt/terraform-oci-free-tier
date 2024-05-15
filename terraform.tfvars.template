@@ -1,0 +1,10 @@
+# Oracle API Key
+TF_VAR_oracle_api_key_fingerprint=
+# Oracle Cloud Infrastructure User OCID
+TF_VAR_user_ocid=
+# Oracle Cloud Infrastructure Tenancy OCID
+TF_VAR_tenancy_ocid=
+# Oracle Cloud Infrastructure Compartment OCID
+TF_VAR_compartment_ocid=
+# SSH Public Key for the Oracle Cloud Infrastructure Compute Instance
+TF_VAR_ssh_public_key=

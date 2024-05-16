@@ -1,8 +1,72 @@
-Creating a Terraform Module for Oracle Cloud Free Tier Virtual Machine
+# Terraform OCI Free Tier
 
-# Terraform Module: Oracle Cloud Free Tier Virtual Machine
+This repository provides Terraform configurations for deploying resources in Oracle Cloud Infrastructure (OCI) Free Tier.
 
-This Terraform module allows you to create a virtual machine (VM) on Oracle Cloud that falls within the Oracle Cloud Free Tier. By using this module, you can easily provision a VM with the necessary configurations while staying within the free usage limits.
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Setup](#setup)
+- [Usage](#usage)
+- [Files](#files)
+- [License](#license)
+
+## Prerequisites
+
+- [Terraform](https://www.terraform.io/downloads.html) installed on your local machine.
+- Oracle Cloud Infrastructure (OCI) account.
+- OCI CLI configured with your credentials.
+
+## Setup
+
+1. **Clone the repository**:
+    ```bash
+    git clone https://github.com/filippolmt/terraform-oci-free-tier.git
+    cd terraform-oci-free-tier
+    ```
+
+2. **Configure your variables**:
+    Copy the `terraform.tfvars.template` to `terraform.tfvars` and fill in the required variables.
+    ```bash
+    cp terraform.tfvars.template terraform.tfvars
+    ```
+
+3. **Initialize Terraform**:
+    ```bash
+    terraform init
+    ```
+
+## Usage
+
+1. **Plan the deployment**:
+    ```bash
+    terraform plan
+    ```
+
+2. **Apply the deployment**:
+    ```bash
+    terraform apply
+    ```
+
+3. **Destroy the deployment**:
+    ```bash
+    terraform destroy
+    ```
+
+## Files
+
+- `main.tf`: Main Terraform configuration file.
+- `outputs.tf`: Defines the outputs of the Terraform configuration.
+- `variables.tf`: Defines the variables used in the Terraform configuration.
+- `versions.tf`: Specifies the required Terraform version and provider versions.
+- `terraform.tfvars.template`: Template for user-specific variables.
+- `.github/workflows/`: Contains GitHub Actions workflows for CI/CD.
+    - `documentation.yml`: Workflow for generating documentation.
+    - `tfsec.yml`: Workflow for running TFsec security scans.
+- `scripts/startup.sh`: Script for initial setup and configuration.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements

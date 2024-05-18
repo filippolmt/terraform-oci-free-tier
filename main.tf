@@ -129,6 +129,7 @@ resource "oci_core_instance" "instance" {
     source_type             = "image"
     source_id               = var.instance_image_ocid[var.region]
     boot_volume_size_in_gbs = var.instance_shape_boot_volume_size_in_gbs
+    kms_key_id              = null
   }
 
   metadata = {

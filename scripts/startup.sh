@@ -25,7 +25,6 @@ if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
 fi
 
 # Mount disk
-
 MNT_DIR=/mnt/data
 
 sudo mkdir -p $MNT_DIR

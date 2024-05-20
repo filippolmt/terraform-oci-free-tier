@@ -113,6 +113,7 @@ resource "oci_core_instance" "instance" {
   compartment_id      = var.compartment_ocid
   display_name        = var.instance_display_name
   shape               = var.instance_shape
+  fault_domain        = var.fault_domain
   create_vnic_details {
     subnet_id        = oci_core_subnet.subnet.id
     display_name     = "VNIC"

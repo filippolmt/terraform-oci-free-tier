@@ -113,6 +113,7 @@ resource "oci_core_instance" "instance" {
   compartment_id      = var.compartment_ocid
   display_name        = var.instance_display_name
   shape               = var.instance_shape
+  fault_domain        = var.fault_domain
   create_vnic_details {
     subnet_id        = oci_core_subnet.subnet.id
     display_name     = "VNIC"
@@ -129,6 +130,7 @@ resource "oci_core_instance" "instance" {
     source_type             = "image"
     source_id               = var.instance_image_ocid[var.region]
     boot_volume_size_in_gbs = var.instance_shape_boot_volume_size_in_gbs
+    kms_key_id              = null
   }
 
   metadata = {

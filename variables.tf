@@ -59,6 +59,12 @@ variable "availability_domain_number" {
   default     = 1
 }
 
+variable "fault_domain" {
+  type        = string
+  description = "The fault domain to deploy to"
+  default     = "FAULT-DOMAIN-2"
+}
+
 variable "instance_shape" {
   type        = string
   description = "The shape of the instance"

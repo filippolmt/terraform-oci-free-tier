@@ -130,7 +130,7 @@ resource "oci_core_instance" "instance" {
     source_type             = "image"
     source_id               = var.instance_image_ocid[var.region]
     boot_volume_size_in_gbs = var.instance_shape_boot_volume_size_in_gbs
-    kms_key_id              = null
+    kms_key_id              = ""
   }
 
   metadata = {
@@ -144,6 +144,22 @@ resource "oci_core_instance" "instance" {
     create = "60m"
   }
 }
+
+# resource "oci_kms_vault" "vault_free_tier_instance" {
+#   compartment_id = var.compartment_ocid
+#   display_name   = var.vault_display_name
+#   vault_type     = var.vault_type
+# }
+
+# resource "oci_kms_key" "key_free_tier_instance" {
+#   key_shape {
+#     algorithm = var.key_algorithm
+#     length    = var.key_length
+#   }
+#   compartment_id = var.compartment_ocid
+#   display_name   = var.key_display_name
+#   management_endpoint = oci_kms_vault.vault_free_tier_instance.management_endpoint
+# }
 
 resource "oci_core_volume" "docker_volume" {
   display_name        = "DockerVolume"

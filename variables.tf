@@ -138,3 +138,33 @@ variable "instance_image_ocid" {
     us-sanjose-1      = "ocid1.image.oc1.us-sanjose-1.aaaaaaaaapli23rbdkhfdejmayyckf7kfelei5ofn54jiunf7tcvpfsl4nuq"
   }
 }
+
+# variable "vault_display_name" {
+#   description = "The display name for the KMS Vault."
+#   type        = string
+#   default     = "Vault-FreeTier-Instance"
+# }
+
+# variable "vault_type" {
+#   description = "The type of the KMS Vault."
+#   type        = string
+#   default     = "DEFAULT"
+# }
+
+# variable "key_display_name" {
+#   description = "The display name for the KMS Key."
+#   type        = string
+#   default     = "Key-FreeTier-Instance"
+# }
+
+# variable "key_algorithm" {
+#   description = "The algorithm used for the KMS Key."
+#   type        = string
+#   default     = "AES"
+# }
+
+# variable "key_length" {
+#   description = "The length of the KMS Key."
+#   type        = number
+#   default     = 32
+# }

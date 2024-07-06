@@ -140,7 +140,7 @@ variable "instance_image_ocid" {
 }
 
 variable "security_list_rules" {
-  description = "The security list rules to apply to the VCN"
+  description = "The security list rules"
   type        = list(object({
     protocol  = string
     source    = string

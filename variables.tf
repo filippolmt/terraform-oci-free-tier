@@ -140,8 +140,8 @@ variable "instance_image_ocid" {
 }
 
 variable "security_list_rules" {
-  description = "The security list rules"
-  type        = list(object({
+  description = "Lista delle regole di sicurezza per il Security List"
+  type = list(object({
     protocol  = string
     source    = string
     stateless = bool
@@ -179,31 +179,14 @@ variable "security_list_rules" {
         min = 22
         max = 22
       }
-      udp_options = {
-        source_port_range = {
-          min = null
-          max = null
-        }
-        min = null
-        max = null
-      }
-      icmp_options = {
-        type = null
-        code = null
-      }
+      udp_options = null
+      icmp_options = null
     },
     {
       protocol  = "17"
       source    = "0.0.0.0/0"
       stateless = false
-      tcp_options = {
-        source_port_range = {
-          min = null
-          max = null
-        }
-        min = null
-        max = null
-      }
+      tcp_options = null
       udp_options = {
         source_port_range = {
           min = 1
@@ -212,31 +195,14 @@ variable "security_list_rules" {
         min = 51820
         max = 51820
       }
-      icmp_options = {
-        type = null
-        code = null
-      }
+      icmp_options = null
     },
     {
       protocol  = "1"
       source    = "0.0.0.0/0"
       stateless = false
-      tcp_options = {
-        source_port_range = {
-          min = null
-          max = null
-        }
-        min = null
-        max = null
-      }
-      udp_options = {
-        source_port_range = {
-          min = null
-          max = null
-        }
-        min = null
-        max = null
-      }
+      tcp_options = null
+      udp_options = null
       icmp_options = {
         type = 3
         code = 4

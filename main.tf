@@ -55,29 +55,35 @@ resource "oci_core_security_list" "security_list" {
 
       tcp_options {
         source_port_range {
-          min = ingress_security_rules.value.tcp_options.source_port_range.min
-          max = ingress_security_rules.value.tcp_options.source_port_range.max
+          min = ingress_security_rules.value.tcp_options != null ? ingress_security_rules.value.tcp_options.source_port_range.min : null
+          max = ingress_security_rules.value.tcp_options != null ? ingress_security_rules.value.tcp_options.source_port_range.max : null
         }
 
-        min = ingress_security_rules.value.tcp_options.min
-        max = ingress_security_rules.value.tcp_options.max
+        min = ingress_security_rules.value.tcp_options != null ? ingress_security_rules.value.tcp_options.min : null
+        max = ingress_security_rules.value.tcp_options != null ? ingress_security_rules.value.tcp_options.max : null
       }
 
       udp_options {
         source_port_range {
-          min = ingress_security_rules.value.udp_options.source_port_range.min
-          max = ingress_security_rules.value.udp_options.source_port_range.max
+          min = ingress_security_rules.value.udp_options != null ? ingress_security_rules.value.udp_options.source_port_range.min : null
+          max = ingress_security_rules.value.udp_options != null ? ingress_security_rules.value.udp_options.source_port_range.max : null
         }
 
-        min = ingress_security_rules.value.udp_options.min
-        max = ingress_security_rules.value.udp_options.max
+        min = ingress_security_rules.value.udp_options != null ? ingress_security_rules.value.udp_options.min : null
+        max = ingress_security_rules.value.udp_options != null ? ingress_security_rules.value.udp_options.max : null
       }
 
       icmp_options {
-        type = ingress_security_rules.value.icmp_options.type
-        code = ingress_security_rules.value.icmp_options.code
+        type = ingress_security_rules.value.icmp_options != null ? ingress_security_rules.value.icmp_options.type : null
+        code = ingress_security_rules.value.icmp_options != null ? ingress_security_rules.value.icmp_options.code : null
       }
     }
+  }
+
+  egress_security_rules {
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
   }
 }
 

@@ -140,7 +140,7 @@ variable "instance_image_ocid" {
 }
 
 variable "security_list_rules" {
-  description = "Lista delle regole di sicurezza per il Security List"
+  description = "The security list rules"
   type = list(object({
     protocol  = string
     source    = string

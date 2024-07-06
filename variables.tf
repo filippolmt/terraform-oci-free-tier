@@ -138,3 +138,109 @@ variable "instance_image_ocid" {
     us-sanjose-1      = "ocid1.image.oc1.us-sanjose-1.aaaaaaaaapli23rbdkhfdejmayyckf7kfelei5ofn54jiunf7tcvpfsl4nuq"
   }
 }
+
+variable "security_list_rules" {
+  description = "The security list rules to apply to the VCN"
+  type        = list(object({
+    protocol  = string
+    source    = string
+    stateless = bool
+    tcp_options = object({
+      source_port_range = object({
+        min = number
+        max = number
+      })
+      min = number
+      max = number
+    })
+    udp_options = object({
+      source_port_range = object({
+        min = number
+        max = number
+      })
+      min = number
+      max = number
+    })
+    icmp_options = object({
+      type = number
+      code = number
+    })
+  }))
+  default = [
+    {
+      protocol  = "6"
+      source    = "0.0.0.0/0"
+      stateless = false
+      tcp_options = {
+        source_port_range = {
+          min = 1
+          max = 65535
+        }
+        min = 22
+        max = 22
+      }
+      udp_options = {
+        source_port_range = {
+          min = null
+          max = null
+        }
+        min = null
+        max = null
+      }
+      icmp_options = {
+        type = null
+        code = null
+      }
+    },
+    {
+      protocol  = "17"
+      source    = "0.0.0.0/0"
+      stateless = false
+      tcp_options = {
+        source_port_range = {
+          min = null
+          max = null
+        }
+        min = null
+        max = null
+      }
+      udp_options = {
+        source_port_range = {
+          min = 1
+          max = 65535
+        }
+        min = 51820
+        max = 51820
+      }
+      icmp_options = {
+        type = null
+        code = null
+      }
+    },
+    {
+      protocol  = "1"
+      source    = "0.0.0.0/0"
+      stateless = false
+      tcp_options = {
+        source_port_range = {
+          min = null
+          max = null
+        }
+        min = null
+        max = null
+      }
+      udp_options = {
+        source_port_range = {
+          min = null
+          max = null
+        }
+        min = null
+        max = null
+      }
+      icmp_options = {
+        type = 3
+        code = 4
+      }
+    }
+  ]
+}

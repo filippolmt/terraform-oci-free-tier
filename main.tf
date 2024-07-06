@@ -46,52 +46,37 @@ resource "oci_core_security_list" "security_list" {
   vcn_id         = oci_core_vcn.vcn.id
   display_name   = "Security List"
 
-  egress_security_rules {
-    destination = "0.0.0.0/0"
-    protocol    = "all"
-  }
+  dynamic "ingress_security_rules" {
+    for_each = var.security_list_rules
+    content {
+      protocol  = ingress_security_rules.value.protocol
+      source    = ingress_security_rules.value.source
+      stateless = ingress_security_rules.value.stateless
 
-  ingress_security_rules {
-    protocol  = "6" // tcp
-    source    = "0.0.0.0/0"
-    stateless = false
+      tcp_options {
+        source_port_range {
+          min = ingress_security_rules.value.tcp_options.source_port_range.min
+          max = ingress_security_rules.value.tcp_options.source_port_range.max
+        }
 
-    tcp_options {
-      source_port_range {
-        min = 1
-        max = 65535
+        min = ingress_security_rules.value.tcp_options.min
+        max = ingress_security_rules.value.tcp_options.max
       }
 
-      min = 22
-      max = 22
-    }
-  }
+      udp_options {
+        source_port_range {
+          min = ingress_security_rules.value.udp_options.source_port_range.min
+          max = ingress_security_rules.value.udp_options.source_port_range.max
+        }
 
-  ingress_security_rules {
-    protocol  = "17" // udp
-    source    = "0.0.0.0/0"
-    stateless = false
-
-    udp_options {
-      source_port_range {
-        min = 1
-        max = 65535
+        min = ingress_security_rules.value.udp_options.min
+        max = ingress_security_rules.value.udp_options.max
       }
 
-      min = 51820
-      max = 51820
-    }
-  }
-
-  ingress_security_rules {
-    description = "icmp_inbound"
-    protocol    = 1
-    source      = "0.0.0.0/0"
-    stateless   = false
-
-    icmp_options {
-      type = 3
-      code = 4
+      icmp_options {
+        type = ingress_security_rules.value.icmp_options.type
+        code = ingress_security_rules.value.icmp_options.code
+      }
     }
   }
 }

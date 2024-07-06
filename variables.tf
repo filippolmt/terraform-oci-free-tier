@@ -138,3 +138,75 @@ variable "instance_image_ocid" {
     us-sanjose-1      = "ocid1.image.oc1.us-sanjose-1.aaaaaaaaapli23rbdkhfdejmayyckf7kfelei5ofn54jiunf7tcvpfsl4nuq"
   }
 }
+
+variable "security_list_rules" {
+  description = "The security list rules"
+  type = list(object({
+    protocol  = string
+    source    = string
+    stateless = bool
+    tcp_options = object({
+      source_port_range = object({
+        min = number
+        max = number
+      })
+      min = number
+      max = number
+    })
+    udp_options = object({
+      source_port_range = object({
+        min = number
+        max = number
+      })
+      min = number
+      max = number
+    })
+    icmp_options = object({
+      type = number
+      code = number
+    })
+  }))
+  default = [
+    {
+      protocol  = "6"
+      source    = "0.0.0.0/0"
+      stateless = false
+      tcp_options = {
+        source_port_range = {
+          min = 1
+          max = 65535
+        }
+        min = 22
+        max = 22
+      }
+      udp_options = null
+      icmp_options = null
+    },
+    {
+      protocol  = "17"
+      source    = "0.0.0.0/0"
+      stateless = false
+      tcp_options = null
+      udp_options = {
+        source_port_range = {
+          min = 1
+          max = 65535
+        }
+        min = 51820
+        max = 51820
+      }
+      icmp_options = null
+    },
+    {
+      protocol  = "1"
+      source    = "0.0.0.0/0"
+      stateless = false
+      tcp_options = null
+      udp_options = null
+      icmp_options = {
+        type = 3
+        code = 4
+      }
+    }
+  ]
+}

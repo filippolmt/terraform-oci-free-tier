@@ -46,53 +46,53 @@ resource "oci_core_security_list" "security_list" {
   vcn_id         = oci_core_vcn.vcn.id
   display_name   = "Security List"
 
+  dynamic "ingress_security_rules" {
+    for_each = var.security_list_rules
+    content {
+      protocol  = ingress_security_rules.value.protocol
+      source    = ingress_security_rules.value.source
+      stateless = ingress_security_rules.value.stateless
+
+      dynamic "tcp_options" {
+        for_each = ingress_security_rules.value.protocol == "6" ? [ingress_security_rules.value.tcp_options] : []
+        content {
+          source_port_range {
+            min = tcp_options.value.source_port_range.min
+            max = tcp_options.value.source_port_range.max
+          }
+
+          min = tcp_options.value.min
+          max = tcp_options.value.max
+        }
+      }
+
+      dynamic "udp_options" {
+        for_each = ingress_security_rules.value.protocol == "17" ? [ingress_security_rules.value.udp_options] : []
+        content {
+          source_port_range {
+            min = udp_options.value.source_port_range.min
+            max = udp_options.value.source_port_range.max
+          }
+
+          min = udp_options.value.min
+          max = udp_options.value.max
+        }
+      }
+
+      dynamic "icmp_options" {
+        for_each = ingress_security_rules.value.protocol == "1" ? [ingress_security_rules.value.icmp_options] : []
+        content {
+          type = icmp_options.value.type
+          code = icmp_options.value.code
+        }
+      }
+    }
+  }
+
   egress_security_rules {
-    destination = "0.0.0.0/0"
-    protocol    = "all"
-  }
-
-  ingress_security_rules {
-    protocol  = "6" // tcp
-    source    = "0.0.0.0/0"
-    stateless = false
-
-    tcp_options {
-      source_port_range {
-        min = 1
-        max = 65535
-      }
-
-      min = 22
-      max = 22
-    }
-  }
-
-  ingress_security_rules {
-    protocol  = "17" // udp
-    source    = "0.0.0.0/0"
-    stateless = false
-
-    udp_options {
-      source_port_range {
-        min = 1
-        max = 65535
-      }
-
-      min = 51820
-      max = 51820
-    }
-  }
-
-  ingress_security_rules {
-    description = "icmp_inbound"
-    protocol    = 1
-    source      = "0.0.0.0/0"
-    stateless   = false
-
-    icmp_options {
-      type = 3
-      code = 4
-    }
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
   }
 }
 

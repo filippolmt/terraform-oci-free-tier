@@ -93,6 +93,12 @@ variable "instance_shape_docker_volume_size_in_gbs" {
   default     = "150"
 }
 
+variable "install_runtipi" {
+  type        = bool
+  description = "Install Homeserver Runtipi refs: https://runtipi.io/"
+  default     = true
+}
+
 variable "instance_image_ocid" {
   type        = map(any)
   description = "The OCID of the image to use for the instance"
@@ -179,13 +185,13 @@ variable "security_list_rules" {
         min = 22
         max = 22
       }
-      udp_options = null
+      udp_options  = null
       icmp_options = null
     },
     {
-      protocol  = "17"
-      source    = "0.0.0.0/0"
-      stateless = false
+      protocol    = "17"
+      source      = "0.0.0.0/0"
+      stateless   = false
       tcp_options = null
       udp_options = {
         source_port_range = {
@@ -198,9 +204,9 @@ variable "security_list_rules" {
       icmp_options = null
     },
     {
-      protocol  = "1"
-      source    = "0.0.0.0/0"
-      stateless = false
+      protocol    = "1"
+      source      = "0.0.0.0/0"
+      stateless   = false
       tcp_options = null
       udp_options = null
       icmp_options = {

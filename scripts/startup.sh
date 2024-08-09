@@ -38,4 +38,13 @@ fi
 
 sudo mount -a
 
-sudo chown -R ubuntu:ubuntu $MNT_DIR
+if [ ! -d $MNT_DIR ]; then
+    echo "Mounting disk failed"
+    exit 1
+fi
+
+# Install Runtipi
+if [ ! -d $MNT_DIR/runtipi ] && [ "${INSTALL_RUNTIPI}" == "true" ]; then
+    cd $MNT_DIR || exit
+    sudo curl -L https://setup.runtipi.io | bash
+fi

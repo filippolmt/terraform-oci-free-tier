@@ -48,3 +48,38 @@ if [ ! -d $MNT_DIR/runtipi ] && [ "${INSTALL_RUNTIPI}" == "true" ]; then
     cd $MNT_DIR || exit
     sudo curl -L https://setup.runtipi.io | bash
 fi
+
+# Create Runtipi user-config directory
+if [ ! -d $MNT_DIR/runtipi/user-config ]; then
+    mkdir -p $MNT_DIR/runtipi/user-config
+fi
+
+# Create docker-compose files configuration for Runtipi
+RUNTIPI_CONFIG_FILE=$MNT_DIR/runtipi/user-config/tipi-compose.yml
+if [ ! -f $RUNTIPI_CONFIG_FILE ]; then
+    cat >"$RUNTIPI_CONFIG_FILE" <<EOL
+        services:
+          runtipi-reverse-proxy:
+            networks:
+              tipi_main_network:
+                ipv4_address: 172.18.0.254
+        networks:
+          tipi_main_network:
+            driver: bridge
+            ipam:
+              config:
+                - subnet: 172.18.0.0/16
+EOL
+fi
+
+# Create docker-compose files configuration for AdGuard
+AD_GUARD_COMPOSE_FILE=$MNT_DIR/runtipi/user-config/adguard/docker-compose.yml
+if [ ! -f $AD_GUARD_COMPOSE_FILE ]; then
+    cat >"$AD_GUARD_COMPOSE_FILE" <<EOL
+        services:
+          adguard:
+            networks:
+              tipi_main_network:
+                ipv4_address: 172.18.0.253
+EOL
+fi

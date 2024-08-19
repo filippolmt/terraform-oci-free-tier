@@ -45,19 +45,17 @@ fi
 
 # Install Runtipi
 if [ ! -d $MNT_DIR/runtipi ] && [ "${INSTALL_RUNTIPI}" == "true" ]; then
-    cd $MNT_DIR || exit
-    sudo curl -L https://setup.runtipi.io | bash
-fi
 
-# Create user-config adguard directory
-if [ ! -d $MNT_DIR/runtipi/user-config/adguard ]; then
-    mkdir -p $MNT_DIR/runtipi/user-config/adguard
-fi
+    # Install Runtipi with subshell to avoid changing the current directory
+    (
+        cd $MNT_DIR || exit
+        sudo curl -L https://setup.runtipi.io | bash
+    )
 
-# Create docker-compose files configuration for Runtipi
-RUNTIPI_CONFIG_FILE=$MNT_DIR/runtipi/user-config/tipi-compose.yml
-if [ ! -f $RUNTIPI_CONFIG_FILE ]; then
-    cat >"$RUNTIPI_CONFIG_FILE" <<EOL
+    # Create docker-compose files configuration for Runtipi
+    RUNTIPI_CONFIG_FILE=$MNT_DIR/runtipi/user-config/tipi-compose.yml
+    if [ ! -f $RUNTIPI_CONFIG_FILE ]; then
+        cat >"$RUNTIPI_CONFIG_FILE" <<EOL
 services:
   runtipi-reverse-proxy:
     networks:
@@ -70,16 +68,21 @@ networks:
       config:
         - subnet: 172.18.0.0/16
 EOL
-fi
+    fi
 
-# Create docker-compose files configuration for AdGuard
-AD_GUARD_COMPOSE_FILE=$MNT_DIR/runtipi/user-config/adguard/docker-compose.yml
-if [ ! -f $AD_GUARD_COMPOSE_FILE ]; then
-    cat >"$AD_GUARD_COMPOSE_FILE" <<EOL
+    # Create docker-compose files configuration for AdGuard
+    AD_GUARD_COMPOSE_FILE=$MNT_DIR/runtipi/user-config/adguard/docker-compose.yml
+    if [ ! -f $AD_GUARD_COMPOSE_FILE ]; then
+        mkdir -p $MNT_DIR/runtipi/user-config/adguard
+        cat >"$AD_GUARD_COMPOSE_FILE" <<EOL
 services:
   adguard:
     networks:
       tipi_main_network:
         ipv4_address: 172.18.0.253
 EOL
+    fi
+
+    # Restart Runtipi
+    $MNT_DIR/runtipi/runtipi-cli restart
 fi

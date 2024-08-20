@@ -104,10 +104,13 @@ If `install_runtipi` is set to `true`, the setup script will install RunTipi and
     - Access the RunTipi dashboard and follow this guide for DNS resolution within the VPN network: [RunTipi DNS Resolution Guide](https://runtipi.io/docs/guides/local-certificate#dns-resolution).
     - Configure the IP to `172.18.0.254`, which is the IP set for Traefik.
 
-3. **WireGuard Configuration**:
+3. **Configure WireGuard**:
     - Install and configure WireGuard by adding a public IP or DNS.
     - Set a password and configure the AdGuard IP to `172.18.0.253`.
     - Restart RunTipi.
+
+4. **Disable Internet Access**:
+    - Once AdGuard is configured and running, you can disable internet access to ensure that applications are only reachable within the local network.
 
 Once these steps are complete, you will be able to use the local network without the applications being accessible externally.
 

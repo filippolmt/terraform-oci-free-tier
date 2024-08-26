@@ -36,13 +36,14 @@ fi
 
 FSTAB_ENTRY="/dev/sdb $MNT_DIR ext4 defaults,nofail 0 2"
 
-# Verifica se l'entry esiste già in /etc/fstab
+# Check if a specific entry is present in /etc/fstab file. If not found, appends the entry to the file and mounts all filesystems.
 if ! grep -qF "$FSTAB_ENTRY" /etc/fstab; then
     echo "$FSTAB_ENTRY" | sudo tee -a /etc/fstab
     sudo mount -a
 fi
 
-# Tenta di montare il disco fino a 20 volte se non è già montato
+# Attempts to mount a disk at a specified directory up to a maximum number of attempts.
+# If successful, logs the number of attempts in a file; otherwise, logs the failure and exits with status 1.
 MAX_ATTEMPTS=20
 ATTEMPT=1
 MOUNT_SUCCESS=false
@@ -53,10 +54,8 @@ while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
         break
     fi
 
-    # Se non è montato, prova a montare
     sudo mount -a
 
-    # Attendere 1 secondo tra i tentativi
     sleep 1
     ATTEMPT=$((ATTEMPT + 1))
 done
@@ -82,13 +81,13 @@ services:
   runtipi-reverse-proxy:
     networks:
       tipi_main_network:
-        ipv4_address: 172.18.0.254
+        ipv4_address: ${RUNTIPI_REVERSE_PROXY_IP}
 networks:
   tipi_main_network:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.18.0.0/16
+        - subnet: ${RUNTIPI_MAIN_NETWORK_SUBNET}
 EOL
     fi
 
@@ -101,7 +100,22 @@ services:
   adguard:
     networks:
       tipi_main_network:
-        ipv4_address: 172.18.0.253
+        ipv4_address: ${RUNTIPI_ADGUARD_IP}
+EOL
+    fi
+
+    # Create docker-compose files configuration for wireguard
+    WIREGUARD_COMPOSE_FILE=$MNT_DIR/runtipi/user-config/wg-easy/docker-compose.yml
+    if [ ! -f $WIREGUARD_COMPOSE_FILE ]; then
+        sudo mkdir -p $MNT_DIR/runtipi/user-config/wg-easy
+        sudo tee "$WIREGUARD_COMPOSE_FILE" <<EOL >/dev/null
+services:
+  wg-easy:
+    environment:
+      WG_HOST: "$${WIREGUARD_HOST}"
+      PASSWORD: "$${WIREGUARD_PASSWORD}"
+      WG_DEFAULT_DNS: "$${WIREGUARD_DNS:-8.8.8.8}"
+      WG_ALLOWED_IPS: "${RUNTIPI_MAIN_NETWORK_SUBNET}"
 EOL
     fi
 fi

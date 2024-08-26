@@ -122,22 +122,25 @@ resource "oci_core_instance" "instance" {
   }
 
   shape_config {
-    memory_in_gbs = var.instance_shape_config_memory_in_gbs
+    memory_in_gbs = var.instance_shape_config_memory_gb
     ocpus         = var.instance_shape_config_ocpus
   }
 
   source_details {
     source_type             = "image"
-    source_id               = var.instance_image_ocid[var.region]
-    boot_volume_size_in_gbs = var.instance_shape_boot_volume_size_in_gbs
+    source_id               = var.instance_image_ocids_by_region[var.region]
+    boot_volume_size_in_gbs = var.instance_shape_boot_volume_size_gb
     kms_key_id              = null
   }
 
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
     user_data = base64encode(templatefile("${path.module}/scripts/startup.sh", {
-      ADDITIONAL_SSH_PUB_KEY = var.additional_ssh_public_key,
-      INSTALL_RUNTIPI = var.install_runtipi,
+      ADDITIONAL_SSH_PUB_KEY      = var.additional_ssh_public_key,
+      INSTALL_RUNTIPI             = var.install_runtipi,
+      RUNTIPI_REVERSE_PROXY_IP    = var.runtipi_reverse_proxy_ip,
+      RUNTIPI_MAIN_NETWORK_SUBNET = var.runtipi_main_network_subnet,
+      RUNTIPI_ADGUARD_IP          = var.runtipi_adguard_ip,
     }))
   }
 
@@ -150,7 +153,7 @@ resource "oci_core_volume" "docker_volume" {
   display_name        = "DockerVolume"
   compartment_id      = var.compartment_ocid
   availability_domain = data.oci_identity_availability_domain.ad.name
-  size_in_gbs         = var.instance_shape_docker_volume_size_in_gbs
+  size_in_gbs         = var.docker_volume_size_gb
 }
 
 resource "oci_core_volume_attachment" "docker_volume_attachment" {

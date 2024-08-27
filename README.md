@@ -188,7 +188,6 @@ No modules.
 
 | Name | Description |
 |------|-------------|
-| <a name="output_instance_ocid"></a> [instance\_ocid](#output\_instance\_ocid) | The OCID of the instance |
-| <a name="output_private_ip"></a> [private\_ip](#output\_private\_ip) | The private IP of the instance |
-| <a name="output_public_ip"></a> [public\_ip](#output\_public\_ip) | The public IP of the instance |
+| <a name="output_"></a> [](#output\_) | n/a |
+| <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The OCID of the instance |
 <!-- END_TF_DOCS -->

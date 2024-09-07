@@ -23,16 +23,19 @@ variable "additional_ssh_public_key" {
 variable "compartment_ocid" {
   type        = string
   description = "The OCID of the compartment"
+  nullable    = false
 }
 
 variable "tenancy_ocid" {
   type        = string
   description = "The OCID of the tenancy"
+  nullable    = false
 }
 
 variable "user_ocid" {
   type        = string
   description = "The OCID of the user to use for authentication"
+  nullable    = false
 }
 
 variable "region" {
@@ -70,24 +73,26 @@ variable "instance_shape" {
   description = "The shape of the instance"
   default     = "VM.Standard.A1.Flex"
 }
-variable "instance_shape_config_memory_in_gbs" {
+
+variable "instance_shape_config_memory_gb" {
   type        = string
   description = "The amount of memory in GBs for the instance"
   default     = "24"
 }
+
 variable "instance_shape_config_ocpus" {
   type        = string
   description = "The number of OCPUs for the instance"
   default     = "4"
 }
 
-variable "instance_shape_boot_volume_size_in_gbs" {
+variable "instance_shape_boot_volume_size_gb" {
   type        = string
   description = "The size of the boot volume in GBs"
   default     = "50"
 }
 
-variable "instance_shape_docker_volume_size_in_gbs" {
+variable "docker_volume_size_gb" {
   type        = string
   description = "The size of the docker volume in GBs"
   default     = "150"
@@ -99,8 +104,26 @@ variable "install_runtipi" {
   default     = true
 }
 
-variable "instance_image_ocid" {
-  type        = map(any)
+variable "runtipi_main_network_subnet" {
+  type        = string
+  description = "The subnet of the main network for Runtipi"
+  default     = "172.18.0.0/16"
+}
+
+variable "runtipi_reverse_proxy_ip" {
+  type        = string
+  description = "The IP of the reverse proxy for Runtipi, WARNING: this IP should be in the subnet of the main network"
+  default     = "172.18.0.254"
+}
+
+variable "runtipi_adguard_ip" {
+  type        = string
+  description = "The IP of the AdGuard for Runtipi, WARNING: this IP should be in the subnet of the main network and different from the reverse proxy IP"
+  default     = "172.18.0.253"
+}
+
+variable "instance_image_ocids_by_region" {
+  type        = map(string)
   description = "The OCID of the image to use for the instance"
   default = {
     # See https://docs.oracle.com/en-us/iaas/images/image/2c243e52-ed4b-4bc5-b7ce-2a94063d2a19/index.htm

@@ -38,15 +38,21 @@ usermod -aG docker ubuntu
 # Add additional SSH public key
 if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
   log "Add additional SSH public key"
-  touch /home/ubuntu/.ssh/authorized_keys
-  chmod 600 /home/ubuntu/.ssh/authorized_keys
-  chown ubuntu:ubuntu /home/ubuntu/.ssh/authorized_keys
-  grep -qxf "${ADDITIONAL_SSH_PUB_KEY}" /home/ubuntu/.ssh/authorized_keys || echo "${ADDITIONAL_SSH_PUB_KEY}" >>/home/ubuntu/.ssh/authorized_keys
+  AUTHORIZED_KEYS_FILE=/home/ubuntu/.ssh/authorized_keys
+  touch $AUTHORIZED_KEYS_FILE
+  chmod 600 $AUTHORIZED_KEYS_FILE
+  chown ubuntu:ubuntu $AUTHORIZED_KEYS_FILE
+  grep -qxf "${ADDITIONAL_SSH_PUB_KEY}" $AUTHORIZED_KEYS_FILE || echo "${ADDITIONAL_SSH_PUB_KEY}" >>$AUTHORIZED_KEYS_FILE
 fi
 
 # Mount disk
 MNT_DIR=/mnt/data
 DEVICE="/dev/sdb"
+
+if [ ! -b "$DEVICE" ]; then
+  log "Error: Block device $DEVICE does not exist"
+  exit 1
+fi
 
 log "Mount disk $DEVICE to $MNT_DIR"
 

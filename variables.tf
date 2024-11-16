@@ -239,3 +239,9 @@ variable "security_list_rules" {
     }
   ]
 }
+
+variable "wireguard_client_configuration" {
+  type        = string
+  description = "Adding a valid configuration for a WireGuard client will automatically install and configure it on the virtual machine."
+  default     = ""
+}

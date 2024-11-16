@@ -131,3 +131,15 @@ EOL
     sudo ./runtipi-cli start
   fi
 fi
+
+# Install and configure Wireguard
+if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
+  sudo apt-get install wireguard -y && sudo ln -s /usr/bin/resolvectl /usr/local/bin/resolvconf
+  WIREGUARD_CLIENT_CONFIGURATION_FILE=/etc/wireguard/wg0.conf
+  if [ ! -f $WIREGUARD_CLIENT_CONFIGURATION_FILE ]; then
+    sudo tee /etc/wireguard/wg0.conf <<EOL >/dev/null
+${WIREGUARD_CLIENT_CONFIGURATION}
+EOL
+  fi
+  sudo systemctl enable wg-quick@wg0
+fi

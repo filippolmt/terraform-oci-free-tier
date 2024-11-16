@@ -244,4 +244,8 @@ variable "wireguard_client_configuration" {
   type        = string
   description = "Adding a valid configuration for a WireGuard client will automatically install and configure it on the virtual machine."
   default     = ""
+  validation {
+    condition     = var.wireguard_client_configuration == "" || can(regex("^\\[Interface\\]", var.wireguard_client_configuration))
+    error_message = "WireGuard configuration must start with [Interface] section or be empty."
+  }
 }

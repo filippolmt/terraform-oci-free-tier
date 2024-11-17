@@ -91,7 +91,7 @@ for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
     log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
     break
   fi
-  mount -a
+  mount "$MNT_DIR"
   sleep 5
 done
 
@@ -170,13 +170,11 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   apt-get install -y wireguard
   if ! command -v resolvconf &>/dev/null; then
     ln -s /usr/bin/resolvectl /usr/local/bin/resolvconf
-  fi
 
-  WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
-  if [ ! -f "$WIREGUARD_CONF_FILE" ]; then
+    WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
     echo "${WIREGUARD_CLIENT_CONFIGURATION}" >"$WIREGUARD_CONF_FILE"
     chmod 600 "$WIREGUARD_CONF_FILE"
-    log "Create $WIREGUARD_CLIENT_CONFIGURATION_FILE file configuration for Wireguard"
+    log "Create $WIREGUARD_CLIENT_CONFIGURATION file configuration for Wireguard"
   fi
 
   systemctl enable wg-quick@wg0

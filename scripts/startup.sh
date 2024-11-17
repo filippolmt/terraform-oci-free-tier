@@ -172,7 +172,7 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
     WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
     echo "${WIREGUARD_CLIENT_CONFIGURATION}" >"$WIREGUARD_CONF_FILE"
     chmod 600 "$WIREGUARD_CONF_FILE"
-    log "Create $WIREGUARD_CLIENT_CONFIGURATION file configuration for Wireguard"
+    log "Create $WIREGUARD_CONF_FILE file configuration for Wireguard"
   fi
 
   systemctl enable wg-quick@wg0

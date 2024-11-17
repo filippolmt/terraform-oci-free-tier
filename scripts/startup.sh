@@ -15,8 +15,8 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Get the non-root user
-USER_NAME="${SUDO_USER:-ubuntu}"
-USER_HOME=$(eval echo "~$USER_NAME")
+USER_NAME="ubuntu"
+USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 
 log "Set needrestart to automatic mode"
 
@@ -45,7 +45,7 @@ apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin do
 usermod -aG docker "$USER_NAME"
 
 # Add additional SSH public key
-if [ -n "${ADDITIONAL_SSH_PUB_KEY:-}" ]; then
+if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
   log "Add additional SSH public key"
   AUTHORIZED_KEYS_FILE="$USER_HOME/.ssh/authorized_keys"
   mkdir -p "$(dirname "$AUTHORIZED_KEYS_FILE")"
@@ -102,7 +102,7 @@ if ! mountpoint -q "$MNT_DIR"; then
 fi
 
 # Install Runtipi
-if [ "${INSTALL_RUNTIPI:-false}" == "true" ]; then
+if [ "${INSTALL_RUNTIPI}" == "true" ]; then
   log "Install Runtipi"
   if [ ! -d "$MNT_DIR/runtipi" ]; then
     cd "$MNT_DIR" || exit
@@ -165,7 +165,7 @@ EOL
 fi
 
 # Install and configure Wireguard
-if [ -n "${WIREGUARD_CLIENT_CONFIGURATION:-}" ]; then
+if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   log "Install and configure Wireguard"
   apt-get install -y wireguard
   if ! command -v resolvconf &>/dev/null; then

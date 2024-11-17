@@ -11,6 +11,7 @@ log() {
 
 # Verify that the script is running as root
 if [ "$EUID" -ne 0 ]; then
+  log "Elevating privileges with sudo"
   exec sudo bash "$0" "$@"
 fi
 
@@ -73,6 +74,7 @@ DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data")
 if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
   log "Format disk $DEVICE to ext4"
   mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard "$DEVICE"
+  e2fsck -f "$DEVICE"
 fi
 
 FSTAB_ENTRY="$DEVICE $MNT_DIR ext4 defaults,nofail 0 2"
@@ -168,14 +170,19 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   apt-get install -y wireguard
   if ! command -v resolvconf &>/dev/null; then
     ln -s /usr/bin/resolvectl /usr/local/bin/resolvconf
-
-    WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
-    echo "${WIREGUARD_CLIENT_CONFIGURATION}" >"$WIREGUARD_CONF_FILE"
-    chmod 600 "$WIREGUARD_CONF_FILE"
-    log "Create $WIREGUARD_CONF_FILE file configuration for Wireguard"
   fi
+
+  WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
+  echo "${WIREGUARD_CLIENT_CONFIGURATION}" >"$WIREGUARD_CONF_FILE"
+  chmod 600 "$WIREGUARD_CONF_FILE"
+  log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
 
   systemctl enable wg-quick@wg0
   systemctl start wg-quick@wg0
+  # Test connection
+  if ! wg show wg0 >/dev/null 2>&1; then
+    log "Error: WireGuard interface failed to initialize"
+    exit 1
+  fi
   log "Enable and start Wireguard"
 fi

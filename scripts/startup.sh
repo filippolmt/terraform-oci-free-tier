@@ -80,18 +80,15 @@ if ! grep -qF "$FSTAB_ENTRY" /etc/fstab; then
   echo "$FSTAB_ENTRY" | tee -a /etc/fstab
 fi
 
-# Mount disk
-mount "$MNT_DIR"
-
 # Attempts to mount a disk at a specified directory up to a maximum number of attempts.
 # If successful, logs the number of attempts in a file; otherwise, logs the failure and exits with status 1.
 MAX_ATTEMPTS=20
 for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
+  mount "$MNT_DIR"
   if mountpoint -q "$MNT_DIR"; then
     log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
     break
   fi
-  mount "$MNT_DIR"
   sleep 5
 done
 

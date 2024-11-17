@@ -49,6 +49,7 @@ if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
   log "Add additional SSH public key"
   AUTHORIZED_KEYS_FILE="$USER_HOME/.ssh/authorized_keys"
   mkdir -p "$(dirname "$AUTHORIZED_KEYS_FILE")"
+  chmod 700 "$(dirname "$AUTHORIZED_KEYS_FILE")"
   touch "$AUTHORIZED_KEYS_FILE"
   chmod 600 "$AUTHORIZED_KEYS_FILE"
   chown "$USER_NAME":"$USER_NAME" "$AUTHORIZED_KEYS_FILE"

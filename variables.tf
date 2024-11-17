@@ -244,7 +244,7 @@ variable "security_list_rules" {
 
 variable "wireguard_client_configuration" {
   type        = string
-  description = "Adding a valid configuration for a WireGuard client will automatically install and configure it on the virtual machine."
+  description = "Adding a valid configuration for a WireGuard client will automatically install and configure it on the virtual machine. Example:<<EOF\n\n[Interface]\nPrivateKey = aaaaaaaaaaaaaaa\nAddress = 1.2.3.4/24\nDNS = 5.6.7.8\nDNS = 9.1.1.1\n\n[Peer]\nPublicKey = bbbbbbbbbbbbbbbbbb\nPresharedKey = ccccccccccccccc\nAllowedIPs = 0.0.0.0/24\nEndpoint = dddddddddddddd\nPersistentKeepalive = 25\nEOF"
   default     = ""
   sensitive   = true
   validation {

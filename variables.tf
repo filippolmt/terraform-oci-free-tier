@@ -12,12 +12,14 @@ variable "oracle_api_private_key_path" {
 variable "ssh_public_key" {
   type        = string
   description = "The public key to use for SSH access"
+  sensitive   = true
 }
 
 variable "additional_ssh_public_key" {
   type        = string
   description = "Additional public key to use for SSH access example: <<EOF > /home/ubuntu/.ssh/authorized_keys ssh-rsa AAAAB3NzaC1yc2EAA EOF"
   default     = ""
+  sensitive   = true
 }
 
 variable "compartment_ocid" {
@@ -244,6 +246,7 @@ variable "wireguard_client_configuration" {
   type        = string
   description = "Adding a valid configuration for a WireGuard client will automatically install and configure it on the virtual machine."
   default     = ""
+  sensitive   = true
   validation {
     condition     = var.wireguard_client_configuration == "" || can(regex("^\\[Interface\\]", var.wireguard_client_configuration))
     error_message = "WireGuard configuration must start with [Interface] section or be empty."

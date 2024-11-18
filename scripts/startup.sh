@@ -77,7 +77,7 @@ if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
   e2fsck -f "$DEVICE"
 fi
 
-FSTAB_ENTRY="$DEVICE $MNT_DIR ext4 defaults,nofail 0 2"
+FSTAB_ENTRY="$DEVICE $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
 
 if ! grep -qF "$FSTAB_ENTRY" /etc/fstab; then
   echo "$FSTAB_ENTRY" | tee -a /etc/fstab

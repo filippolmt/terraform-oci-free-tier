@@ -1,88 +1,118 @@
 #!/bin/bash
 
-sudo sudo sed -i "s/^#\$nrconf{restart} = 'i';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+set -euo pipefail
+IFS=$'\n\t'
 
-# Add Docker's official GPG key:
-sudo apt-get update && apt-get upgrade -y && apt-get autoremove -y
-sudo apt-get install ca-certificates curl gnupg file vim -y
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
+LOG_FILE="/var/log/setup_script.log"
 
-# Add the repository to Apt sources:
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
+}
+
+# Verify that the script is running as root
+if [ "$EUID" -ne 0 ]; then
+  log "Elevating privileges with sudo"
+  exec sudo bash "$0" "$@"
+fi
+
+# Get the non-root user
+USER_NAME="ubuntu"
+USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+
+log "Set needrestart to automatic mode"
+
+perl -pi -e "s/^#?\s*\$nrconf{restart} = '.*?';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+
+log "Update and upgrade the system"
+apt-get update && apt-get upgrade -y && apt-get autoremove -y
+
+log "Install necessary packages"
+apt-get install -y ca-certificates curl gnupg file vim
+
+log "Install Docker"
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |
-  sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-sudo apt-get update && sudo apt-get upgrade -y && sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y
+  tee /etc/apt/sources.list.d/docker.list >/dev/null
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Add user to docker group
-sudo usermod -aG docker ubuntu
+usermod -aG docker "$USER_NAME"
 
 # Add additional SSH public key
 if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
-  grep -qxf "${ADDITIONAL_SSH_PUB_KEY}" /home/ubuntu/.ssh/authorized_keys || echo "${ADDITIONAL_SSH_PUB_KEY}" >>/home/ubuntu/.ssh/authorized_keys
+  log "Add additional SSH public key"
+  AUTHORIZED_KEYS_FILE="$USER_HOME/.ssh/authorized_keys"
+  mkdir -p "$(dirname "$AUTHORIZED_KEYS_FILE")"
+  chmod 700 "$(dirname "$AUTHORIZED_KEYS_FILE")"
+  touch "$AUTHORIZED_KEYS_FILE"
+  chmod 600 "$AUTHORIZED_KEYS_FILE"
+  chown "$USER_NAME":"$USER_NAME" "$AUTHORIZED_KEYS_FILE"
+  grep -qxF "${ADDITIONAL_SSH_PUB_KEY}" "$AUTHORIZED_KEYS_FILE" || echo "${ADDITIONAL_SSH_PUB_KEY}" >>"$AUTHORIZED_KEYS_FILE"
 fi
 
 # Mount disk
-MNT_DIR=/mnt/data
+MNT_DIR="/mnt/data"
+DEVICE="/dev/sdb"
 
-sudo mkdir -p $MNT_DIR
-grep -q "$MNT_DIR" /etc/fstab || echo "/dev/sdb $MNT_DIR ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
-
-DISK_IS_FORMATTED=$(sudo file -s /dev/sdb | grep -c "ext4 filesystem data")
-
-if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
-  sudo mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard /dev/sdb
+if [ ! -b "$DEVICE" ]; then
+  log "Error: Block device $DEVICE does not exist"
+  exit 1
 fi
 
-FSTAB_ENTRY="/dev/sdb $MNT_DIR ext4 defaults,nofail 0 2"
+log "Mount disk $DEVICE to $MNT_DIR"
+mkdir -p "$MNT_DIR"
 
-# Check if a specific entry is present in /etc/fstab file. If not found, appends the entry to the file and mounts all filesystems.
+DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data")
+
+if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
+  log "Format disk $DEVICE to ext4"
+  mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard "$DEVICE"
+  e2fsck -f "$DEVICE"
+fi
+
+FSTAB_ENTRY="$DEVICE $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
+
 if ! grep -qF "$FSTAB_ENTRY" /etc/fstab; then
-  echo "$FSTAB_ENTRY" | sudo tee -a /etc/fstab
-  sudo mount -a
+  echo "$FSTAB_ENTRY" | tee -a /etc/fstab
 fi
 
 # Attempts to mount a disk at a specified directory up to a maximum number of attempts.
 # If successful, logs the number of attempts in a file; otherwise, logs the failure and exits with status 1.
 MAX_ATTEMPTS=20
-ATTEMPT=1
-MOUNT_SUCCESS=false
-
-while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-  if mountpoint -q $MNT_DIR; then
-    MOUNT_SUCCESS=true
+for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
+  mount "$MNT_DIR"
+  if mountpoint -q "$MNT_DIR"; then
+    log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
     break
   fi
-
-  sudo mount -a
-
   sleep 5
-  ATTEMPT=$((ATTEMPT + 1))
 done
 
-if [ "$MOUNT_SUCCESS" = true ]; then
-  echo "Disk mounted successfully after $ATTEMPT attempts." | sudo tee -a /var/log/mount.log
-else
-  echo "Mounting disk failed after $MAX_ATTEMPTS attempts." | sudo tee -a /var/log/mount.log
+# Verify that the disk is mounted
+if ! mountpoint -q "$MNT_DIR"; then
+  log "Failed to mount disk $DEVICE to $MNT_DIR after $MAX_ATTEMPTS attempts."
   exit 1
 fi
 
 # Install Runtipi
 if [ "${INSTALL_RUNTIPI}" == "true" ]; then
-
-  if [ ! -d $MNT_DIR/runtipi ]; then
-    cd $MNT_DIR || exit
-    curl -L https://setup.runtipi.io | sudo bash
-  else
-    START_RUNTIPI="true"
+  log "Install Runtipi"
+  if [ ! -d "$MNT_DIR/runtipi" ]; then
+    cd "$MNT_DIR" || exit
+    curl -L https://setup.runtipi.io | bash
   fi
 
-  # Create docker-compose files configuration for Runtipi
-  RUNTIPI_CONFIG_FILE=$MNT_DIR/runtipi/user-config/tipi-compose.yml
-  if [ ! -f $RUNTIPI_CONFIG_FILE ]; then
-    sudo tee "$RUNTIPI_CONFIG_FILE" <<EOL >/dev/null
+  # Configure Runtipi
+  RUNTIPI_CONFIG_FILE="$MNT_DIR/runtipi/user-config/tipi-compose.yml"
+  if [ ! -f "$RUNTIPI_CONFIG_FILE" ]; then
+    cat >"$RUNTIPI_CONFIG_FILE" <<EOL
 services:
   runtipi-reverse-proxy:
     networks:
@@ -95,26 +125,28 @@ networks:
       config:
         - subnet: ${RUNTIPI_MAIN_NETWORK_SUBNET}
 EOL
+    log "Create $RUNTIPI_CONFIG_FILE files configuration for Runtipi"
   fi
 
-  # Create docker-compose files configuration for AdGuard
-  AD_GUARD_COMPOSE_FILE=$MNT_DIR/runtipi/user-config/adguard/docker-compose.yml
-  if [ ! -f $AD_GUARD_COMPOSE_FILE ]; then
-    sudo mkdir -p $MNT_DIR/runtipi/user-config/adguard
-    sudo tee "$AD_GUARD_COMPOSE_FILE" <<EOL >/dev/null
+  # Configure AdGuard
+  AD_GUARD_COMPOSE_FILE="$MNT_DIR/runtipi/user-config/adguard/docker-compose.yml"
+  if [ ! -f "$AD_GUARD_COMPOSE_FILE" ]; then
+    mkdir -p "$(dirname "$AD_GUARD_COMPOSE_FILE")"
+    cat >"$AD_GUARD_COMPOSE_FILE" <<EOL
 services:
   adguard:
     networks:
       tipi_main_network:
         ipv4_address: ${RUNTIPI_ADGUARD_IP}
 EOL
+    log "Create $AD_GUARD_COMPOSE_FILE files configuration for AdGuard"
   fi
 
-  # Create docker-compose files configuration for wireguard
-  WIREGUARD_COMPOSE_FILE=$MNT_DIR/runtipi/user-config/wg-easy/docker-compose.yml
-  if [ ! -f $WIREGUARD_COMPOSE_FILE ]; then
-    sudo mkdir -p $MNT_DIR/runtipi/user-config/wg-easy
-    sudo tee "$WIREGUARD_COMPOSE_FILE" <<EOL >/dev/null
+  # Configure Wireguard
+  WIREGUARD_COMPOSE_FILE="$MNT_DIR/runtipi/user-config/wg-easy/docker-compose.yml"
+  if [ ! -f "$WIREGUARD_COMPOSE_FILE" ]; then
+    mkdir -p "$(dirname "$WIREGUARD_COMPOSE_FILE")"
+    cat >"$WIREGUARD_COMPOSE_FILE" <<EOL
 services:
   wg-easy:
     environment:
@@ -123,11 +155,34 @@ services:
       WG_DEFAULT_DNS: "$${WIREGUARD_DNS:-8.8.8.8}"
       WG_ALLOWED_IPS: "${RUNTIPI_MAIN_NETWORK_SUBNET}"
 EOL
+    log "Create $WIREGUARD_COMPOSE_FILE files configuration for Wireguard"
   fi
 
-  # Start Runtipi if is not installed
-  if [ "$START_RUNTIPI" == "true" ]; then
-    cd $MNT_DIR/runtipi || exit
-    sudo ./runtipi-cli start
+  # Start Runtipi
+  cd "$MNT_DIR/runtipi" || exit
+  ./runtipi-cli start
+  log "Start Runtipi"
+fi
+
+# Install and configure Wireguard
+if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
+  log "Install and configure Wireguard"
+  apt-get install -y wireguard
+  if ! command -v resolvconf &>/dev/null; then
+    ln -s /usr/bin/resolvectl /usr/local/bin/resolvconf
   fi
+
+  WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
+  echo "${WIREGUARD_CLIENT_CONFIGURATION}" >"$WIREGUARD_CONF_FILE"
+  chmod 600 "$WIREGUARD_CONF_FILE"
+  log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
+
+  systemctl enable wg-quick@wg0
+  systemctl start wg-quick@wg0
+  # Test connection
+  if ! wg show wg0 >/dev/null 2>&1; then
+    log "Error: WireGuard interface failed to initialize"
+    exit 1
+  fi
+  log "Enable and start Wireguard"
 fi

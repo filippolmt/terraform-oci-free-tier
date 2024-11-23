@@ -177,8 +177,7 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   chmod 600 "$WIREGUARD_CONF_FILE"
   log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
 
-  systemctl enable wg-quick@wg0
-  systemctl start wg-quick@wg0
+  systemctl enable --now wg-quick@wg0
   # Test connection
   if ! wg show wg0 >/dev/null 2>&1; then
     log "Error: WireGuard interface failed to initialize"

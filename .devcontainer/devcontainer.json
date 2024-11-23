@@ -6,12 +6,18 @@
   },
   "customizations": {
     "vscode": {
-      "settings": {},
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.rulers": [80, 100],
+        "files.trimTrailingWhitespace": true
+      },
       "extensions": [
         "jetpack-io.devbox",
         "hashicorp.terraform",
         "foxundermoon.shell-format",
-        "timonwong.shellcheck"
+        "timonwong.shellcheck",
+        "eamodio.gitlens",
+        "streetsidesoftware.code-spell-checker"
       ]
     }
   },

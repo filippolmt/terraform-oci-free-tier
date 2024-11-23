@@ -1,0 +1,19 @@
+{
+  "name": "Devbox Remote Container",
+  "build": {
+    "dockerfile": "./Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "jetpack-io.devbox",
+        "hashicorp.terraform",
+        "foxundermoon.shell-format",
+        "timonwong.shellcheck"
+      ]
+    }
+  },
+  "remoteUser": "devbox"
+}

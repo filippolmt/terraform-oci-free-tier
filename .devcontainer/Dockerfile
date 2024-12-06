@@ -1,4 +1,4 @@
-FROM jetpackio/devbox:0.13.6
+FROM jetpackio/devbox:0.13.7
 
 # Installing your devbox project
 WORKDIR /code

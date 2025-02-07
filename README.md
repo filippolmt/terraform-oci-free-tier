@@ -124,13 +124,13 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >=1.3 |
-| <a name="requirement_oci"></a> [oci](#requirement\_oci) | 6.23.0 |
+| <a name="requirement_oci"></a> [oci](#requirement\_oci) | 6.25.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_oci"></a> [oci](#provider\_oci) | 6.23.0 |
+| <a name="provider_oci"></a> [oci](#provider\_oci) | 6.25.0 |
 
 ## Modules
 
@@ -140,21 +140,21 @@ No modules.
 
 | Name | Type |
 |------|------|
-| [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_default_route_table) | resource |
-| [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_instance) | resource |
-| [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_internet_gateway) | resource |
-| [oci_core_public_ip.public_ip](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_public_ip) | resource |
-| [oci_core_security_list.security_list](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_security_list) | resource |
-| [oci_core_subnet.subnet](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_subnet) | resource |
-| [oci_core_vcn.vcn](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_vcn) | resource |
-| [oci_core_volume.docker_volume](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_volume) | resource |
-| [oci_core_volume_attachment.docker_volume_attachment](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_volume_attachment) | resource |
-| [oci_core_volume_backup_policy.docker_volume_backup_policy](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_volume_backup_policy) | resource |
-| [oci_core_volume_backup_policy_assignment.docker_volume_backup_policy_assignment](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/resources/core_volume_backup_policy_assignment) | resource |
-| [oci_core_private_ips.instance_private_ip](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/data-sources/core_private_ips) | data source |
-| [oci_core_vnic.instance_vnic](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/data-sources/core_vnic) | data source |
-| [oci_core_vnic_attachments.instance_vnics](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/data-sources/core_vnic_attachments) | data source |
-| [oci_identity_availability_domain.ad](https://registry.terraform.io/providers/oracle/oci/6.23.0/docs/data-sources/identity_availability_domain) | data source |
+| [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_default_route_table) | resource |
+| [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_instance) | resource |
+| [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_internet_gateway) | resource |
+| [oci_core_public_ip.public_ip](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_public_ip) | resource |
+| [oci_core_security_list.security_list](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_security_list) | resource |
+| [oci_core_subnet.subnet](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_subnet) | resource |
+| [oci_core_vcn.vcn](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_vcn) | resource |
+| [oci_core_volume.docker_volume](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_volume) | resource |
+| [oci_core_volume_attachment.docker_volume_attachment](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_volume_attachment) | resource |
+| [oci_core_volume_backup_policy.docker_volume_backup_policy](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_volume_backup_policy) | resource |
+| [oci_core_volume_backup_policy_assignment.docker_volume_backup_policy_assignment](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/resources/core_volume_backup_policy_assignment) | resource |
+| [oci_core_private_ips.instance_private_ip](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/data-sources/core_private_ips) | data source |
+| [oci_core_vnic.instance_vnic](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/data-sources/core_vnic) | data source |
+| [oci_core_vnic_attachments.instance_vnics](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/data-sources/core_vnic_attachments) | data source |
+| [oci_identity_availability_domain.ad](https://registry.terraform.io/providers/oracle/oci/6.25.0/docs/data-sources/identity_availability_domain) | data source |
 
 ## Inputs
 

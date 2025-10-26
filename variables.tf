@@ -128,8 +128,9 @@ variable "instance_image_ocids_by_region" {
   type        = map(string)
   description = "The OCID of the image to use for the instance"
   default = {
-    # See https://docs.oracle.com/en-us/iaas/images/ubuntu-2404/canonical-ubuntu-24-04-minimal-aarch64-2025-09-22-0.htm
-    # Oracle-provided image "Canonical-Ubuntu-24.04-Minimal-aarch64-2024.10.08-0"
+    # See https://docs.oracle.com/en-us/iaas/images/
+    # Canonical Ubuntu 24.04 Minimal for ARM64: https://docs.oracle.com/en-us/iaas/images/ubuntu-2404/canonical-ubuntu-24-04-minimal-aarch64-2025-09-22-0.htm
+
     af-johannesburg-1 = "ocid1.image.oc1.af-johannesburg-1.aaaaaaaak5nlhyhiwafbxjhlreejewizjs7nhod257vja2eh6vkernjckbja"
     ap-chuncheon-1    = "ocid1.image.oc1.ap-chuncheon-1.aaaaaaaabectst4fkxq5avpaf4dstmemodqmdo5txhs3632etb34vuer6ajq"
     ap-hyderabad-1    = "ocid1.image.oc1.ap-hyderabad-1.aaaaaaaajrplcfdj6tfe7hsnyxvd2mi6rny2qqxnvd33xcaz236yt2vwd6ga"

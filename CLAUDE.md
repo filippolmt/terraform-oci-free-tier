@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Terraform module for deploying Oracle Cloud Infrastructure (OCI) Free Tier resources. Provisions an ARM-based VM (VM.Standard.A1.Flex) with Docker, optional RunTipi homeserver, and optional WireGuard VPN client.
 
+**Current version: 3.0.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v2.x.
+
 ## Common Commands
 
 ```bash
@@ -64,6 +66,8 @@ make native-test
 - `Dockerfile`: Multi-arch container with OpenTofu, tflint, Trivy, terraform-docs
 - `Makefile`: Test automation (Docker and native targets)
 - `renovate.json`: Automated dependency updates configuration
+- `CHANGELOG.md`: Version history and breaking changes documentation
+- `.trivyignore`: Security scan exceptions for CI/CD container
 
 ### Startup Script Features
 The instance runs `scripts/startup.sh` via cloud-init which:

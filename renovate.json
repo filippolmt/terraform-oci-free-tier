@@ -4,26 +4,34 @@
     "config:recommended",
     "schedule:weekly"
   ],
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "prHourlyLimit": 2,
   "prConcurrentLimit": 5,
   "platformAutomerge": false,
   "packageRules": [
     {
       "description": "Group all Terraform provider updates",
-      "matchManagers": ["terraform"],
+      "matchManagers": [
+        "terraform"
+      ],
       "groupName": "terraform providers",
       "automerge": false
     },
     {
       "description": "Group all GitHub Actions updates",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github-actions",
       "automerge": false
     },
     {
       "description": "Group all Dockerfile dependency updates",
-      "matchManagers": ["dockerfile"],
+      "matchManagers": [
+        "dockerfile"
+      ],
       "groupName": "dockerfile",
       "automerge": false
     }
@@ -32,7 +40,9 @@
     {
       "customType": "regex",
       "description": "Update OpenTofu version in Dockerfile",
-      "fileMatch": ["^Dockerfile$"],
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG OPENTOFU_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
@@ -43,7 +53,9 @@
     {
       "customType": "regex",
       "description": "Update terraform-docs version in Dockerfile",
-      "fileMatch": ["^Dockerfile$"],
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG TERRAFORM_DOCS_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
@@ -54,7 +66,9 @@
     {
       "customType": "regex",
       "description": "Update tflint version in Dockerfile",
-      "fileMatch": ["^Dockerfile$"],
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG TFLINT_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
@@ -65,7 +79,9 @@
     {
       "customType": "regex",
       "description": "Update Trivy version in Dockerfile",
-      "fileMatch": ["^Dockerfile$"],
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
       "matchStrings": [
         "ARG TRIVY_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],

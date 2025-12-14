@@ -1,0 +1,5 @@
+# Ignore checks for CI/CD test container (ephemeral, not a long-running service)
+
+# DS002: Non-root user - not needed for ephemeral build container
+
+AVD-DS-0002

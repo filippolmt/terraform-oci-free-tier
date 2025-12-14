@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Terraform
+.terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.template
+.terraform.lock.hcl
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+
+# CI/CD
+.github
+
+# Documentation
+*.md
+!README.md
+
+# Claude
+.claude
+CLAUDE.md

@@ -4,10 +4,33 @@ set -euo pipefail
 IFS=$'\n\t'
 
 LOG_FILE="/var/log/setup_script.log"
+COMPLETION_MARKER="/var/log/.setup_script_completed"
 
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
 }
+
+log_error() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $*" | tee -a "$LOG_FILE" >&2
+}
+
+# Cleanup function for error handling
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    log_error "Script failed with exit code $exit_code"
+    log_error "Check $LOG_FILE for details"
+  fi
+  exit $exit_code
+}
+
+trap cleanup EXIT
+
+# Check if script already completed successfully
+if [ -f "$COMPLETION_MARKER" ]; then
+  log "Setup script already completed. Skipping. Remove $COMPLETION_MARKER to re-run."
+  exit 0
+fi
 
 # Verify that the script is running as root
 if [ "$EUID" -ne 0 ]; then
@@ -19,19 +42,50 @@ fi
 USER_NAME="ubuntu"
 USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 
-log "Set needrestart to automatic mode"
+# Retry function for commands that may fail due to network issues
+retry() {
+  local max_attempts="$1"
+  local delay="$2"
+  shift 2
+  local attempt=1
 
-perl -pi -e "s/^#?\s*\$nrconf{restart} = '.*?';/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+  while [ "$attempt" -le "$max_attempts" ]; do
+    if "$@"; then
+      return 0
+    fi
+    log "Attempt $attempt/$max_attempts failed for: $*"
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      log "Retrying in $delay seconds..."
+      sleep "$delay"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  log_error "All $max_attempts attempts failed for: $*"
+  return 1
+}
+
+# Set needrestart to automatic mode
+log "Set needrestart to automatic mode"
+if [ -f /etc/needrestart/needrestart.conf ]; then
+  perl -pi -e "s/^#?\s*\\\$nrconf{restart} = '.*?';/\\\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf
+else
+  log "needrestart.conf not found, skipping"
+fi
 
 log "Update and upgrade the system"
-apt-get update && apt-get upgrade -y && apt-get autoremove -y
+retry 3 10 apt-get update
+retry 3 10 apt-get upgrade -y
+apt-get autoremove -y
 
 log "Install necessary packages"
-apt-get install -y ca-certificates curl gnupg file vim
+retry 3 10 apt-get install -y ca-certificates curl gnupg file vim
 
 log "Install Docker"
 install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+retry 3 10 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg
+gpg --dearmor -o /etc/apt/keyrings/docker.gpg < /tmp/docker.gpg
+rm -f /tmp/docker.gpg
 chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo \
@@ -39,8 +93,8 @@ echo \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |
   tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+retry 3 10 apt-get update
+retry 3 10 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Add user to docker group
 usermod -aG docker "$USER_NAME"
@@ -54,27 +108,51 @@ if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
   touch "$AUTHORIZED_KEYS_FILE"
   chmod 600 "$AUTHORIZED_KEYS_FILE"
   chown "$USER_NAME":"$USER_NAME" "$AUTHORIZED_KEYS_FILE"
+  chown "$USER_NAME":"$USER_NAME" "$(dirname "$AUTHORIZED_KEYS_FILE")"
   grep -qxF "${ADDITIONAL_SSH_PUB_KEY}" "$AUTHORIZED_KEYS_FILE" || echo "${ADDITIONAL_SSH_PUB_KEY}" >>"$AUTHORIZED_KEYS_FILE"
+fi
+
+# Auto-detect the secondary block device (not the boot disk)
+log "Detecting secondary block device"
+BOOT_DEVICE=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//' | sed 's/p$//')
+DEVICE=""
+
+for dev in /dev/sdb /dev/sdc /dev/sdd /dev/vdb /dev/vdc /dev/vdd /dev/nvme1n1 /dev/nvme2n1; do
+  if [ -b "$dev" ] && [ "$dev" != "$BOOT_DEVICE" ]; then
+    # Check if device has no partitions and is not mounted
+    if ! lsblk -n "$dev" | grep -q "part" && ! findmnt -n "$dev" >/dev/null 2>&1; then
+      DEVICE="$dev"
+      log "Found secondary block device: $DEVICE"
+      break
+    fi
+  fi
+done
+
+if [ -z "$DEVICE" ]; then
+  # Fallback to /dev/sdb if auto-detection fails
+  if [ -b "/dev/sdb" ]; then
+    DEVICE="/dev/sdb"
+    log "Fallback to default device: $DEVICE"
+  else
+    log_error "No secondary block device found"
+    exit 1
+  fi
 fi
 
 # Mount disk
 MNT_DIR="/mnt/data"
-DEVICE="/dev/sdb"
-
-if [ ! -b "$DEVICE" ]; then
-  log "Error: Block device $DEVICE does not exist"
-  exit 1
-fi
 
 log "Mount disk $DEVICE to $MNT_DIR"
 mkdir -p "$MNT_DIR"
 
-DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data")
+# Check if disk is formatted (use || true to prevent set -e from triggering)
+DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data" || true)
 
 if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
   log "Format disk $DEVICE to ext4"
   mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard "$DEVICE"
-  e2fsck -f "$DEVICE"
+  # Use -y for non-interactive mode
+  e2fsck -fy "$DEVICE" || true
 fi
 
 FSTAB_ENTRY="$DEVICE $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
@@ -84,20 +162,22 @@ if ! grep -qF "$FSTAB_ENTRY" /etc/fstab; then
 fi
 
 # Attempts to mount a disk at a specified directory up to a maximum number of attempts.
-# If successful, logs the number of attempts in a file; otherwise, logs the failure and exits with status 1.
 MAX_ATTEMPTS=20
 for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
-  mount "$MNT_DIR"
-  if mountpoint -q "$MNT_DIR"; then
-    log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
-    break
+  if mount "$MNT_DIR" 2>/dev/null; then
+    if mountpoint -q "$MNT_DIR"; then
+      log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
+      break
+    fi
   fi
-  sleep 5
+  if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+    sleep 5
+  fi
 done
 
 # Verify that the disk is mounted
 if ! mountpoint -q "$MNT_DIR"; then
-  log "Failed to mount disk $DEVICE to $MNT_DIR after $MAX_ATTEMPTS attempts."
+  log_error "Failed to mount disk $DEVICE to $MNT_DIR after $MAX_ATTEMPTS attempts."
   exit 1
 fi
 
@@ -106,12 +186,23 @@ if [ "${INSTALL_RUNTIPI}" == "true" ]; then
   log "Install Runtipi"
   if [ ! -d "$MNT_DIR/runtipi" ]; then
     cd "$MNT_DIR" || exit
-    curl -L https://setup.runtipi.io | bash
+
+    # Download Runtipi installer to a file instead of piping to bash
+    RUNTIPI_INSTALLER="/tmp/runtipi-setup.sh"
+    log "Downloading Runtipi installer..."
+    retry 3 10 curl -fsSL https://setup.runtipi.io -o "$RUNTIPI_INSTALLER"
+
+    # Make executable and run
+    chmod +x "$RUNTIPI_INSTALLER"
+    log "Running Runtipi installer..."
+    bash "$RUNTIPI_INSTALLER"
+    rm -f "$RUNTIPI_INSTALLER"
   fi
 
   # Configure Runtipi
   RUNTIPI_CONFIG_FILE="$MNT_DIR/runtipi/user-config/tipi-compose.yml"
   if [ ! -f "$RUNTIPI_CONFIG_FILE" ]; then
+    mkdir -p "$(dirname "$RUNTIPI_CONFIG_FILE")"
     cat >"$RUNTIPI_CONFIG_FILE" <<EOL
 services:
   runtipi-reverse-proxy:
@@ -167,9 +258,9 @@ fi
 # Install and configure Wireguard
 if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   log "Install and configure Wireguard"
-  apt-get install -y wireguard
+  retry 3 10 apt-get install -y wireguard
   if ! command -v resolvconf &>/dev/null; then
-    ln -s /usr/bin/resolvectl /usr/local/bin/resolvconf
+    ln -sf /usr/bin/resolvectl /usr/local/bin/resolvconf
   fi
 
   WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
@@ -178,10 +269,16 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
 
   systemctl enable --now wg-quick@wg0
+  # Wait a moment for interface to initialize
+  sleep 3
   # Test connection
   if ! wg show wg0 >/dev/null 2>&1; then
-    log "Error: WireGuard interface failed to initialize"
+    log_error "WireGuard interface failed to initialize"
     exit 1
   fi
   log "Enable and start Wireguard"
 fi
+
+# Mark setup as completed
+touch "$COMPLETION_MARKER"
+log "Setup completed successfully"

@@ -2,10 +2,13 @@
 
 This repository provides Terraform configurations for deploying resources in the Oracle Cloud Infrastructure (OCI) Free Tier.
 
+> **Upgrading from v2.x?** See the [CHANGELOG](CHANGELOG.md) for breaking changes and migration guide.
+
 ## Table of Contents
 
 - [Terraform OCI Free Tier](#terraform-oci-free-tier)
   - [Table of Contents](#table-of-contents)
+  - [Changelog](#changelog)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
   - [Usage](#usage)
@@ -19,6 +22,10 @@ This repository provides Terraform configurations for deploying resources in the
   - [Resources](#resources)
   - [Inputs](#inputs)
   - [Outputs](#outputs)
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history, breaking changes, and migration guides.
 
 ## Prerequisites
 

@@ -1,6 +1,77 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "schedule:weekly"
+  ],
+  "labels": ["dependencies"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 5,
+  "platformAutomerge": false,
+  "packageRules": [
+    {
+      "description": "Group all Terraform provider updates",
+      "matchManagers": ["terraform"],
+      "groupName": "terraform providers",
+      "automerge": false
+    },
+    {
+      "description": "Group all GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": false
+    },
+    {
+      "description": "Group all Dockerfile dependency updates",
+      "matchManagers": ["dockerfile"],
+      "groupName": "dockerfile",
+      "automerge": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update OpenTofu version in Dockerfile",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG OPENTOFU_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "opentofu/opentofu",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update terraform-docs version in Dockerfile",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG TERRAFORM_DOCS_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "terraform-docs/terraform-docs",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update tflint version in Dockerfile",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG TFLINT_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "terraform-linters/tflint",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Update Trivy version in Dockerfile",
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": [
+        "ARG TRIVY_VERSION=(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "aquasecurity/trivy",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
   ]
 }

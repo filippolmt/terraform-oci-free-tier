@@ -1,0 +1,116 @@
+name: Terraform CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*.tf"
+      - "Makefile"
+      - "Dockerfile"
+      - ".github/workflows/terraform.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "*.tf"
+      - "Makefile"
+      - "Dockerfile"
+      - ".github/workflows/terraform.yml"
+  schedule:
+    - cron: "0 8 * * 1" # Weekly on Monday at 8:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: make build
+
+      - name: Check formatting
+        id: fmt
+        run: make fmt-check
+        continue-on-error: true
+
+      - name: Validate
+        id: validate
+        run: make validate
+
+      - name: Lint
+        id: lint
+        run: make lint
+        continue-on-error: true
+
+      - name: Security scan
+        id: security
+        run: make security
+        continue-on-error: true
+
+      - name: Post results to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fmt = '${{ steps.fmt.outcome }}';
+            const validate = '${{ steps.validate.outcome }}';
+            const lint = '${{ steps.lint.outcome }}';
+            const security = '${{ steps.security.outcome }}';
+
+            let body = '## Terraform CI Results\n\n';
+            body += `| Check | Status |\n`;
+            body += `|-------|--------|\n`;
+            body += `| Format | ${fmt === 'success' ? '✅ Pass' : '⚠️ Fail'} |\n`;
+            body += `| Validate | ${validate === 'success' ? '✅ Pass' : '❌ Fail'} |\n`;
+            body += `| Lint | ${lint === 'success' ? '✅ Pass' : '⚠️ Warnings'} |\n`;
+            body += `| Security | ${security === 'success' ? '✅ Pass' : '⚠️ Issues'} |\n`;
+
+            if (fmt !== 'success') {
+              body += '\n> **Format:** Run `make fmt` to fix formatting issues.\n';
+            }
+            if (lint !== 'success') {
+              body += '\n> **Lint:** Run `make lint` locally to see details.\n';
+            }
+            if (security !== 'success') {
+              body += '\n> **Security:** Run `make security-all` locally to see all findings.\n';
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail if validate failed
+        if: steps.validate.outcome == 'failure'
+        run: exit 1
+
+  security-sarif:
+    name: Security SARIF
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "config"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"

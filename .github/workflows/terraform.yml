@@ -1,10 +1,11 @@
-name: Terraform CI
+name: OpenTofu CI
 
 on:
   push:
     branches: [main]
     paths:
       - "*.tf"
+      - "scripts/**"
       - "Makefile"
       - "Dockerfile"
       - ".github/workflows/terraform.yml"
@@ -12,11 +13,16 @@ on:
     branches: [main]
     paths:
       - "*.tf"
+      - "scripts/**"
       - "Makefile"
       - "Dockerfile"
       - ".github/workflows/terraform.yml"
   schedule:
     - cron: "0 8 * * 1" # Weekly on Monday at 8:00 UTC
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -38,7 +44,6 @@ jobs:
       - name: Check formatting
         id: fmt
         run: make fmt-check
-        continue-on-error: true
 
       - name: Validate
         id: validate
@@ -49,49 +54,80 @@ jobs:
         run: make lint
         continue-on-error: true
 
+      - name: Shellcheck
+        id: shellcheck
+        run: make shellcheck
+
       - name: Security scan
         id: security
         run: make security
         continue-on-error: true
 
-      - name: Post results to PR
+      - name: Check docs are up-to-date
+        id: docs
         if: github.event_name == 'pull_request'
+        run: make docs-check
+
+      - name: Post results to PR
+        if: github.event_name == 'pull_request' && !cancelled()
         uses: actions/github-script@v8
         with:
           script: |
             const fmt = '${{ steps.fmt.outcome }}';
             const validate = '${{ steps.validate.outcome }}';
             const lint = '${{ steps.lint.outcome }}';
+            const shellcheck = '${{ steps.shellcheck.outcome }}';
             const security = '${{ steps.security.outcome }}';
+            const docs = '${{ steps.docs.outcome }}';
 
-            let body = '## Terraform CI Results\n\n';
+            const icon = (outcome, soft) => {
+              if (outcome === 'success') return '✅ Pass';
+              if (outcome === 'skipped') return '⏭️ Skipped';
+              return soft ? '⚠️ Warnings' : '❌ Fail';
+            };
+
+            let body = '## OpenTofu CI Results\n\n';
             body += `| Check | Status |\n`;
             body += `|-------|--------|\n`;
-            body += `| Format | ${fmt === 'success' ? '✅ Pass' : '⚠️ Fail'} |\n`;
-            body += `| Validate | ${validate === 'success' ? '✅ Pass' : '❌ Fail'} |\n`;
-            body += `| Lint | ${lint === 'success' ? '✅ Pass' : '⚠️ Warnings'} |\n`;
-            body += `| Security | ${security === 'success' ? '✅ Pass' : '⚠️ Issues'} |\n`;
+            body += `| Format | ${icon(fmt)} |\n`;
+            body += `| Validate | ${icon(validate)} |\n`;
+            body += `| Lint | ${icon(lint, true)} |\n`;
+            body += `| Shellcheck | ${icon(shellcheck)} |\n`;
+            body += `| Security | ${icon(security, true)} |\n`;
+            body += `| Docs | ${icon(docs)} |\n`;
 
-            if (fmt !== 'success') {
-              body += '\n> **Format:** Run `make fmt` to fix formatting issues.\n';
-            }
-            if (lint !== 'success') {
-              body += '\n> **Lint:** Run `make lint` locally to see details.\n';
-            }
-            if (security !== 'success') {
-              body += '\n> **Security:** Run `make security-all` locally to see all findings.\n';
-            }
+            const hints = [];
+            if (fmt !== 'success') hints.push('> **Format:** Run `make fmt` to fix formatting issues.');
+            if (lint !== 'success') hints.push('> **Lint:** Run `make lint` locally to see details.');
+            if (shellcheck !== 'success') hints.push('> **Shellcheck:** Run `make shellcheck` locally to see details.');
+            if (security !== 'success') hints.push('> **Security:** Run `make security-all` locally to see all findings.');
+            if (docs !== 'success' && docs !== 'skipped') hints.push('> **Docs:** Run `make docs` and commit the updated README.md.');
+            if (hints.length > 0) body += '\n' + hints.join('\n');
 
-            github.rest.issues.createComment({
+            // Update existing comment or create new one
+            const marker = '## OpenTofu CI Results';
+            const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: body
             });
+            const existing = comments.find(c => c.body.includes(marker));
 
-      - name: Fail if validate failed
-        if: steps.validate.outcome == 'failure'
-        run: exit 1
+            if (existing) {
+              await github.rest.issues.updateComment({
+                comment_id: existing.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
 
   security-sarif:
     name: Security SARIF

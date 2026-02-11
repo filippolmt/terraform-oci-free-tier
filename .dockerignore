@@ -2,7 +2,7 @@
 .git
 .gitignore
 
-# Terraform
+# OpenTofu/Terraform
 .terraform
 *.tfstate
 *.tfstate.*

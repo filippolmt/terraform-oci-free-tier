@@ -6,138 +6,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Terraform module for deploying Oracle Cloud Infrastructure (OCI) Free Tier resources. Provisions an ARM-based VM (VM.Standard.A1.Flex) with Docker, optional RunTipi homeserver, and optional WireGuard VPN client.
 
-**Current version: 3.0.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v2.x.
+**Current version: 4.0.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v3.x.
 
-## Common Commands
-
-```bash
-# Initialize
-terraform init    # or: tofu init
-
-# Plan and apply
-terraform plan    # or: tofu plan
-terraform apply   # or: tofu apply
-
-# Destroy
-terraform destroy # or: tofu destroy
-
-# Validate
-terraform validate # or: tofu validate
-```
-
-## Local Testing (Docker)
+## Commands
 
 ```bash
-# Run all tests (fmt, validate, lint, security)
-make test
+# All testing runs through Docker via Makefile
+make test           # Run all checks: fmt-check → validate → lint → shellcheck → security
+make fmt            # Auto-format .tf files
+make docs           # Regenerate README.md terraform-docs section
+make shell          # Interactive shell in test container
+make clean          # Remove Docker image and .terraform/
 
-# Individual targets
-make build          # Build Docker image
-make fmt            # Format Terraform files
-make fmt-check      # Check formatting
-make validate       # Run tofu validate
-make lint           # Run tflint
-make security       # Run Trivy (HIGH/CRITICAL only)
-make security-all   # Run Trivy (all severities)
-make docs           # Generate terraform-docs
-make shell          # Interactive shell in container
-make clean          # Remove Docker image and .terraform
-
-# Native targets (without Docker, requires local tools)
+# Native equivalents (requires local tofu, tflint, trivy)
 make native-test
+
+# Direct OpenTofu commands (require terraform.tfvars)
+tofu init && tofu plan
 ```
 
 ## Architecture
 
-### Resources Created
-- **VCN** with configurable subnet CIDR, internet gateway, and security list
-- **Compute Instance**: ARM64 VM (default: 4 OCPUs, 24GB RAM) running Ubuntu 24.04 Minimal
-- **Block Volume**: Separate volume for Docker data (default: 150GB) mounted at `/mnt/data` with `prevent_destroy` lifecycle
-- **Reserved Public IP**: Persistent IP attached to the instance
-- **Backup Policy**: Daily incremental backups with 5-day retention
+Infrastructure is split into domain-specific files (no submodules): `network.tf` (VCN, Subnet, Internet Gateway, Route Table, Security List), `compute.tf` (Instance, Public IP, data sources), and `storage.tf` (Block Volume, Volume Attachment, Backup Policy). The module creates a compute instance (ARM64, 4 OCPUs, 24GB RAM), a separate block volume (150GB) for Docker data mounted at `/mnt/data`, a reserved public IP, and a daily backup policy (3-day retention to stay within Free Tier's 5-backup limit).
 
-### Key Files
-- `versions.tf`: Terraform/OpenTofu and provider version constraints
-- `providers.tf`: OCI provider configuration
-- `main.tf`: All infrastructure resources
-- `variables.tf`: Input variables with OCI image OCIDs for all regions
-- `outputs.tf`: Instance, network, and volume outputs including SSH connection string
-- `scripts/startup.sh`: Cloud-init script for Docker, RunTipi, and WireGuard setup
-- `Dockerfile`: Multi-arch container with OpenTofu, tflint, Trivy, terraform-docs
-- `Makefile`: Test automation (Docker and native targets)
-- `renovate.json`: Automated dependency updates configuration
-- `CHANGELOG.md`: Version history and breaking changes documentation
-- `.trivyignore`: Security scan exceptions for CI/CD container
+### Critical Design Details
 
-### Startup Script Features
-The instance runs `scripts/startup.sh` via cloud-init which:
-1. Uses completion marker (`/var/log/.setup_script_completed`) to prevent re-runs
-2. Has retry logic for network operations (apt-get, curl)
-3. Auto-detects secondary block device (not hardcoded)
-4. Installs Docker and adds ubuntu user to docker group
-5. Formats and mounts the block volume at `/mnt/data`
-6. If `install_runtipi=true`: Downloads and installs RunTipi (no curl|bash)
-7. If `wireguard_client_configuration` is provided: Installs WireGuard client
+- **`prevent_destroy` on docker_volume**: The block volume in `storage.tf` has `lifecycle { prevent_destroy = true }`. Destroying the stack requires manually removing this lifecycle rule or using `tofu state rm` first.
+- **`ignore_changes` on user_data**: The instance in `compute.tf` has `lifecycle { ignore_changes = [metadata["user_data"]] }` to prevent instance recreation when the startup script changes.
+- **Startup script is a `templatefile()`**: `scripts/startup.sh` is rendered via `templatefile()` in the instance's `user_data` metadata block in `compute.tf`. Any new shell variable in the script must have a matching Terraform variable passed in the `templatefile()` call. Existing template variables: `ADDITIONAL_SSH_PUB_KEY`, `INSTALL_RUNTIPI`, `RUNTIPI_REVERSE_PROXY_IP`, `RUNTIPI_MAIN_NETWORK_SUBNET`, `RUNTIPI_ADGUARD_IP`, `WIREGUARD_CLIENT_CONFIGURATION`.
+- **Free Tier validation rules**: `variables.tf` includes validation blocks that enforce Free Tier limits (max 4 OCPUs, max 24GB RAM, minimum volume sizes, CIDR format, fault domain format).
+- **Region image OCIDs**: `variables.tf` contains a `instance_image_ocids_by_region` map with Ubuntu 24.04 ARM64 image OCIDs for 35+ OCI regions. When updating the base image, every region OCID must be updated. These are managed by Renovate when possible.
+- **Ingress firewall rules**: Managed via `locals` in `network.tf`. SSH (22/TCP) and ICMP fragmentation (type 3, code 4) are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when `install_runtipi = true`. Ping is controlled by `enable_ping` (default: false). Custom rules use `custom_ingress_security_rules` with a simplified type (just protocol + ports). OCI protocol identifiers: `"6"` = TCP, `"17"` = UDP, `"1"` = ICMP.
+- **Public IP via reserved IP**: The instance is created with `assign_public_ip = false`; instead, a reserved IP is looked up via a `data.oci_core_private_ips` data source and attached as `oci_core_public_ip`.
 
-### Security Configuration
+### Startup Script (`scripts/startup.sh`)
 
-**Ingress rules** (`ingress_security_rules` variable):
-- TCP 22 (SSH) - "Allow SSH from anywhere"
-- UDP 51820 (WireGuard) - "Allow WireGuard VPN"
-- ICMP type 3 code 4 - "Allow ICMP fragmentation needed"
+Runs via cloud-init on first boot. Uses a completion marker (`/var/log/.setup_script_completed`) to prevent re-runs. Sets `DEBIAN_FRONTEND=noninteractive` to avoid apt hangs. Uses APT lock timeout (`DPkg::Lock::Timeout=60`) to handle race conditions with `unattended-upgrades`. Adds Docker APT repo first, then does a single `apt-get update` + install for all packages. Has retry logic for network operations. Auto-detects the secondary block device with a retry loop (up to 5 minutes) for volume attachment. Formats with lazy ext4 init for fast first-boot. Uses UUID-based fstab entries for reliable mounts across reboots. Installs Docker, optionally installs RunTipi (downloads installer to file, no `curl|bash`), and optionally configures WireGuard client (non-fatal on failure).
 
-**Egress rules** (`egress_security_rules` variable) - restrictive defaults:
-- TCP 443 (HTTPS outbound)
-- TCP 80 (HTTP outbound)
-- UDP/TCP 53 (DNS outbound)
-- UDP 123 (NTP outbound)
+## CI/CD
 
-All security rules have descriptions and are fully configurable via variables.
+Two GitHub Actions workflows (`.github/workflows/`):
+- **terraform.yml**: Runs on push/PR to main and weekly. Builds the Docker test image, then runs fmt-check, validate, lint, shellcheck, and security scan. Format, validate, and shellcheck are blocking; lint and security use `continue-on-error`. Checks docs drift on PRs. Posts a results table as PR comment (updates existing comment). Uses concurrency control to cancel in-progress runs. A separate job uploads Trivy SARIF to GitHub Security tab.
+- **documentation.yml**: Auto-generates terraform-docs on PRs when `.tf` files change.
 
-### Resource Tagging
-All resources support `freeform_tags` variable (default: `ManagedBy=Terraform`).
+## Dependencies
 
-### Encryption
-Optional KMS encryption via `kms_key_id` variable for boot volume and docker volume.
+Renovate (`renovate.json`) auto-updates: OCI provider version in `versions.tf`, GitHub Actions versions, and Dockerfile tool versions (OpenTofu, terraform-docs, tflint, Trivy) via custom regex managers.
 
-## CI/CD Workflows
+## Variables
 
-- **documentation.yml**: Auto-generates terraform-docs on PRs (only runs when .tf files change)
-- **terraform.yml**: Runs on push/PR to main and weekly, uses Makefile targets:
-  - `make fmt-check` - Format validation
-  - `make validate` - OpenTofu validation
-  - `make lint` - tflint analysis
-  - `make security` - Trivy security scan (HIGH/CRITICAL)
-  - Posts PR comment with results summary
-  - Uploads Trivy SARIF to GitHub Security tab
+Required (set in `terraform.tfvars` or `TF_VAR_*` env vars): `compartment_ocid`, `tenancy_ocid`, `user_ocid`, `oracle_api_key_fingerprint`, `ssh_public_key`. See `terraform.tfvars.template` for the format.
 
-## Dependency Management
-
-Renovate is configured (`renovate.json`) to automatically update:
-- Terraform/OCI provider versions
-- GitHub Actions versions
-- Dockerfile tool versions (OpenTofu, terraform-docs, tflint, Trivy)
-
-## Required Variables
-
-Set these in `terraform.tfvars` or as `TF_VAR_*` environment variables:
-- `compartment_ocid`
-- `tenancy_ocid`
-- `user_ocid`
-- `oracle_api_key_fingerprint`
-- `ssh_public_key`
-
-## Optional Variables
-
-- `subnet_cidr_block`: Subnet CIDR (default: `10.1.0.0/24`)
-- `kms_key_id`: KMS key for volume encryption (default: `null`)
-- `freeform_tags`: Tags for all resources (default: `{ManagedBy=Terraform}`)
-- `ingress_security_rules`: Inbound firewall rules
-- `egress_security_rules`: Outbound firewall rules (restrictive by default)
-
-## Outputs
-
-- `instance_id`, `private_ip`, `public_ip`
-- `vcn_id`, `subnet_id`, `docker_volume_id`
-- `availability_domain`
-- `ssh_connection` - Ready-to-use SSH command
+Notable optional: `install_runtipi` (default: `true`), `enable_ping` (default: `false`), `custom_ingress_security_rules` (simplified: protocol + ports), `wireguard_client_configuration` (must start with `[Interface]` or be empty), `egress_security_rules` (restrictive by default: HTTPS, HTTP, DNS, NTP only), `kms_key_id` for volume encryption, `freeform_tags` (default: `{ManagedBy=Terraform}`).

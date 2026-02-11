@@ -12,11 +12,11 @@
   "platformAutomerge": false,
   "packageRules": [
     {
-      "description": "Group all Terraform provider updates",
+      "description": "Group all OpenTofu provider updates",
       "matchManagers": [
         "terraform"
       ],
-      "groupName": "terraform providers",
+      "groupName": "opentofu providers",
       "automerge": false
     },
     {
@@ -28,11 +28,22 @@
       "automerge": false
     },
     {
-      "description": "Group all Dockerfile dependency updates",
+      "description": "Group all Dockerfile dependency updates (base image)",
       "matchManagers": [
         "dockerfile"
       ],
       "groupName": "dockerfile",
+      "automerge": false
+    },
+    {
+      "description": "Group all Dockerfile tool version updates",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchFileNames": [
+        "Dockerfile"
+      ],
+      "groupName": "dockerfile tools",
       "automerge": false
     }
   ],

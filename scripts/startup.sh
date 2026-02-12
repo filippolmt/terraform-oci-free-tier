@@ -38,6 +38,9 @@ if [ "$EUID" -ne 0 ]; then
   exec sudo bash "$0" "$@"
 fi
 
+# Prevent interactive prompts from apt during cloud-init
+export DEBIAN_FRONTEND=noninteractive
+
 # Get the non-root user
 USER_NAME="ubuntu"
 USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
@@ -73,28 +76,26 @@ else
   log "needrestart.conf not found, skipping"
 fi
 
-log "Update and upgrade the system"
-retry 3 10 apt-get update
-retry 3 10 apt-get upgrade -y
-apt-get autoremove -y
-
-log "Install necessary packages"
-retry 3 10 apt-get install -y ca-certificates curl gnupg file vim
-
-log "Install Docker"
+# Add Docker APT repository before updating package lists (single apt-get update)
+# Use .asc (ASCII-armored) key directly — avoids requiring gpg binary (not in Ubuntu Minimal)
+log "Add Docker APT repository"
 install -m 0755 -d /etc/apt/keyrings
-retry 3 10 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker.gpg
-gpg --dearmor -o /etc/apt/keyrings/docker.gpg < /tmp/docker.gpg
-rm -f /tmp/docker.gpg
-chmod a+r /etc/apt/keyrings/docker.gpg
+retry 3 10 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
 
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |
   tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-retry 3 10 apt-get update
-retry 3 10 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Wait for any existing apt locks (unattended-upgrades may run at first boot)
+log "Update, upgrade, and install all packages"
+retry 5 30 apt-get -o DPkg::Lock::Timeout=60 update
+retry 3 10 apt-get -o DPkg::Lock::Timeout=60 -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade -y
+apt-get -o DPkg::Lock::Timeout=60 autoremove -y
+retry 3 10 apt-get -o DPkg::Lock::Timeout=60 install -y \
+  ca-certificates curl file vim \
+  docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # Add user to docker group
 usermod -aG docker "$USER_NAME"
@@ -113,28 +114,37 @@ if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
 fi
 
 # Auto-detect the secondary block device (not the boot disk)
+# Retry detection because the volume attachment may still be in progress
 log "Detecting secondary block device"
 BOOT_DEVICE=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//' | sed 's/p$//')
 DEVICE=""
+DETECT_MAX_ATTEMPTS=30
 
-for dev in /dev/sdb /dev/sdc /dev/sdd /dev/vdb /dev/vdc /dev/vdd /dev/nvme1n1 /dev/nvme2n1; do
-  if [ -b "$dev" ] && [ "$dev" != "$BOOT_DEVICE" ]; then
-    # Check if device has no partitions and is not mounted
-    if ! lsblk -n "$dev" | grep -q "part" && ! findmnt -n "$dev" >/dev/null 2>&1; then
-      DEVICE="$dev"
-      log "Found secondary block device: $DEVICE"
-      break
+for ((DETECT_ATTEMPT = 1; DETECT_ATTEMPT <= DETECT_MAX_ATTEMPTS; DETECT_ATTEMPT++)); do
+  for dev in /dev/sdb /dev/sdc /dev/sdd /dev/vdb /dev/vdc /dev/vdd /dev/nvme1n1 /dev/nvme2n1; do
+    if [ -b "$dev" ] && [ "$dev" != "$BOOT_DEVICE" ]; then
+      # Check if device has no partitions and is not mounted
+      if ! lsblk -n "$dev" | grep -q "part" && ! findmnt -n "$dev" >/dev/null 2>&1; then
+        DEVICE="$dev"
+        log "Found secondary block device: $DEVICE"
+        break 2
+      fi
     fi
-  fi
+  done
+
+  log "Waiting for block volume to attach (attempt $DETECT_ATTEMPT/$DETECT_MAX_ATTEMPTS)..."
+  sleep 10
 done
 
+# Fallback to /dev/sdb only after all detection attempts are exhausted
 if [ -z "$DEVICE" ]; then
-  # Fallback to /dev/sdb if auto-detection fails
-  if [ -b "/dev/sdb" ]; then
+  if [ -b "/dev/sdb" ] && [ "/dev/sdb" != "$BOOT_DEVICE" ] \
+     && ! lsblk -n "/dev/sdb" | grep -q "part" \
+     && ! findmnt -n "/dev/sdb" >/dev/null 2>&1; then
     DEVICE="/dev/sdb"
     log "Fallback to default device: $DEVICE"
   else
-    log_error "No secondary block device found"
+    log_error "No secondary block device found after $DETECT_MAX_ATTEMPTS attempts"
     exit 1
   fi
 fi
@@ -149,15 +159,31 @@ mkdir -p "$MNT_DIR"
 DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data" || true)
 
 if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
-  log "Format disk $DEVICE to ext4"
-  mkfs.ext4 -m 0 -F -E lazy_itable_init=0,lazy_journal_init=0,discard "$DEVICE"
-  # Use -y for non-interactive mode
-  e2fsck -fy "$DEVICE" || true
+  log "Format disk $DEVICE to ext4 (lazy init, background completion after mount)"
+  mkfs.ext4 -m 0 -F -E lazy_itable_init=1,lazy_journal_init=1,discard "$DEVICE"
 fi
 
-FSTAB_ENTRY="$DEVICE $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
+# Use UUID for fstab (device paths like /dev/sdb can change between reboots)
+# Retry blkid because UUID may not be immediately available after mkfs with lazy init
+DEVICE_UUID=""
+for ((UUID_ATTEMPT = 1; UUID_ATTEMPT <= 10; UUID_ATTEMPT++)); do
+  DEVICE_UUID=$(blkid -s UUID -o value "$DEVICE" 2>/dev/null || true)
+  if [ -n "$DEVICE_UUID" ]; then
+    break
+  fi
+  log "Waiting for UUID to become available (attempt $UUID_ATTEMPT/10)..."
+  sleep 2
+done
 
-if ! grep -qF "$FSTAB_ENTRY" /etc/fstab; then
+if [ -z "$DEVICE_UUID" ]; then
+  log_error "Failed to retrieve UUID for $DEVICE"
+  exit 1
+fi
+
+log "Device $DEVICE has UUID=$DEVICE_UUID"
+FSTAB_ENTRY="UUID=$DEVICE_UUID $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
+
+if ! grep -qF "UUID=$DEVICE_UUID" /etc/fstab; then
   echo "$FSTAB_ENTRY" | tee -a /etc/fstab
 fi
 
@@ -258,7 +284,7 @@ fi
 # Install and configure Wireguard
 if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   log "Install and configure Wireguard"
-  retry 3 10 apt-get install -y wireguard
+  retry 3 10 apt-get -o DPkg::Lock::Timeout=60 install -y wireguard
   if ! command -v resolvconf &>/dev/null; then
     ln -sf /usr/bin/resolvectl /usr/local/bin/resolvconf
   fi
@@ -268,15 +294,17 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   chmod 600 "$WIREGUARD_CONF_FILE"
   log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
 
-  systemctl enable --now wg-quick@wg0
-  # Wait a moment for interface to initialize
-  sleep 3
-  # Test connection
-  if ! wg show wg0 >/dev/null 2>&1; then
-    log_error "WireGuard interface failed to initialize"
-    exit 1
+  # Enable and start WireGuard (non-fatal: don't block entire setup on failure)
+  if systemctl enable --now wg-quick@wg0; then
+    sleep 3
+    if wg show wg0 >/dev/null 2>&1; then
+      log "WireGuard interface initialized successfully"
+    else
+      log_error "WireGuard interface failed to initialize (check manually with: wg show wg0)"
+    fi
+  else
+    log_error "WireGuard service failed to start (check manually with: systemctl status wg-quick@wg0)"
   fi
-  log "Enable and start Wireguard"
 fi
 
 # Mark setup as completed

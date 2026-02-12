@@ -37,3 +37,8 @@ output "ssh_connection" {
   description = "SSH command to connect to the instance"
   value       = "ssh ubuntu@${oci_core_public_ip.public_ip.ip_address}"
 }
+
+output "security_list_id" {
+  description = "The OCID of the security list"
+  value       = oci_core_security_list.security_list.id
+}

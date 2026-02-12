@@ -138,7 +138,9 @@ done
 
 # Fallback to /dev/sdb only after all detection attempts are exhausted
 if [ -z "$DEVICE" ]; then
-  if [ -b "/dev/sdb" ] && [ "/dev/sdb" != "$BOOT_DEVICE" ]; then
+  if [ -b "/dev/sdb" ] && [ "/dev/sdb" != "$BOOT_DEVICE" ] \
+     && ! lsblk -n "/dev/sdb" | grep -q "part" \
+     && ! findmnt -n "/dev/sdb" >/dev/null 2>&1; then
     DEVICE="/dev/sdb"
     log "Fallback to default device: $DEVICE"
   else
@@ -292,14 +294,16 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   chmod 600 "$WIREGUARD_CONF_FILE"
   log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
 
-  systemctl enable --now wg-quick@wg0
-  # Wait a moment for interface to initialize
-  sleep 3
-  # Test connection (non-fatal: WireGuard is optional, don't block entire setup)
-  if wg show wg0 >/dev/null 2>&1; then
-    log "WireGuard interface initialized successfully"
+  # Enable and start WireGuard (non-fatal: don't block entire setup on failure)
+  if systemctl enable --now wg-quick@wg0; then
+    sleep 3
+    if wg show wg0 >/dev/null 2>&1; then
+      log "WireGuard interface initialized successfully"
+    else
+      log_error "WireGuard interface failed to initialize (check manually with: wg show wg0)"
+    fi
   else
-    log_error "WireGuard interface failed to initialize (check manually with: wg show wg0)"
+    log_error "WireGuard service failed to start (check manually with: systemctl status wg-quick@wg0)"
   fi
 fi
 

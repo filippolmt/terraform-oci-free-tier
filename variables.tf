@@ -65,7 +65,7 @@ variable "vcn_cidr_block" {
 
 variable "subnet_cidr_block" {
   type        = string
-  description = "The CIDR block for the subnet"
+  description = "The CIDR block for the subnet (must be within vcn_cidr_block; OCI will reject it at apply time otherwise)"
   default     = "10.1.0.0/24"
 
   validation {
@@ -231,6 +231,17 @@ variable "instance_image_ocids_by_region" {
   }
 }
 
+variable "ssh_source_cidr" {
+  type        = string
+  description = "Source CIDR allowed for SSH access (default: 0.0.0.0/0 — all IPs)"
+  default     = "0.0.0.0/0"
+
+  validation {
+    condition     = can(cidrhost(var.ssh_source_cidr, 0))
+    error_message = "Must be valid CIDR notation (e.g. 0.0.0.0/0 or 203.0.113.0/24)."
+  }
+}
+
 variable "enable_ping" {
   type        = bool
   description = "Whether to allow ICMP echo requests (ping) from anywhere"
@@ -262,10 +273,21 @@ variable "custom_ingress_security_rules" {
     condition     = alltrue([for r in var.custom_ingress_security_rules : r.port_min <= r.port_max])
     error_message = "port_min must be less than or equal to port_max."
   }
+
+  validation {
+    condition     = alltrue([for r in var.custom_ingress_security_rules : can(cidrhost(r.source, 0))])
+    error_message = "Each custom ingress rule 'source' must be a valid CIDR (e.g. 0.0.0.0/0)."
+  }
+}
+
+variable "enable_unrestricted_egress" {
+  type        = bool
+  description = "Allow all outbound traffic (all protocols, all ports, 0.0.0.0/0). When false, only egress_security_rules are applied."
+  default     = true
 }
 
 variable "egress_security_rules" {
-  description = "List of egress (outbound) security rules for the VCN security list. Default allows only HTTP, HTTPS, DNS, and NTP"
+  description = "List of egress (outbound) security rules. Only used when enable_unrestricted_egress=false. Default allows HTTP, HTTPS, DNS, and NTP."
   type = list(object({
     description      = string
     protocol         = string

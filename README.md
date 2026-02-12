@@ -116,7 +116,7 @@ Ingress firewall rules are managed automatically based on enabled features. No m
 ### Ingress Rules
 
 **Always enabled:**
-- TCP 22 (SSH) from anywhere
+- TCP 22 (SSH) — source configurable via `ssh_source_cidr` (default: `0.0.0.0/0`)
 - ICMP type 3 code 4 (fragmentation needed — required for Path MTU Discovery)
 
 **Auto-added when `install_runtipi = true`:**
@@ -140,13 +140,15 @@ custom_ingress_security_rules = [
 ]
 ```
 
-### Egress Rules (Default - Restrictive)
+### Egress Rules
+
+By default, all outbound traffic is allowed (`enable_unrestricted_egress = true`). To apply restrictive egress rules, set `enable_unrestricted_egress = false` — the default restrictive set allows only:
 - TCP 443 (HTTPS)
 - TCP 80 (HTTP)
 - UDP/TCP 53 (DNS)
 - UDP 123 (NTP)
 
-To customize egress rules, override `egress_security_rules`.
+To further customize restrictive egress rules, override `egress_security_rules`.
 
 ### Optional Features
 - **KMS Encryption**: Set `kms_key_id` to encrypt boot and data volumes with customer-managed keys
@@ -224,8 +226,9 @@ No modules.
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | The OCID of the compartment | `string` | n/a | yes |
 | <a name="input_custom_ingress_security_rules"></a> [custom\_ingress\_security\_rules](#input\_custom\_ingress\_security\_rules) | Additional custom ingress rules. SSH (22/TCP) and ICMP fragmentation are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when install\_runtipi=true. Ping is controlled by enable\_ping. | <pre>list(object({<br/>    description = optional(string, "Custom rule")<br/>    protocol    = string # "6" (TCP) or "17" (UDP)<br/>    source      = optional(string, "0.0.0.0/0")<br/>    port_min    = number<br/>    port_max    = number<br/>  }))</pre> | `[]` | no |
 | <a name="input_docker_volume_size_gb"></a> [docker\_volume\_size\_gb](#input\_docker\_volume\_size\_gb) | The size of the secondary block volume in GBs (mounted at /mnt/data for Docker data) | `number` | `150` | no |
-| <a name="input_egress_security_rules"></a> [egress\_security\_rules](#input\_egress\_security\_rules) | List of egress (outbound) security rules for the VCN security list. Default allows only HTTP, HTTPS, DNS, and NTP | <pre>list(object({<br/>    description      = string<br/>    protocol         = string<br/>    destination      = string<br/>    destination_type = string<br/>    stateless        = bool<br/>    tcp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    udp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    icmp_options = optional(object({<br/>      type = number<br/>      code = number<br/>    }))<br/>  }))</pre> | <pre>[<br/>  {<br/>    "description": "Allow HTTPS outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 443,<br/>      "min": 443<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow HTTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 80,<br/>      "min": 80<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (UDP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (TCP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow NTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 123,<br/>      "min": 123<br/>    }<br/>  }<br/>]</pre> | no |
+| <a name="input_egress_security_rules"></a> [egress\_security\_rules](#input\_egress\_security\_rules) | List of egress (outbound) security rules. Only used when enable\_unrestricted\_egress=false. Default allows HTTP, HTTPS, DNS, and NTP. | <pre>list(object({<br/>    description      = string<br/>    protocol         = string<br/>    destination      = string<br/>    destination_type = string<br/>    stateless        = bool<br/>    tcp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    udp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    icmp_options = optional(object({<br/>      type = number<br/>      code = number<br/>    }))<br/>  }))</pre> | <pre>[<br/>  {<br/>    "description": "Allow HTTPS outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 443,<br/>      "min": 443<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow HTTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 80,<br/>      "min": 80<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (UDP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (TCP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow NTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 123,<br/>      "min": 123<br/>    }<br/>  }<br/>]</pre> | no |
 | <a name="input_enable_ping"></a> [enable\_ping](#input\_enable\_ping) | Whether to allow ICMP echo requests (ping) from anywhere | `bool` | `false` | no |
+| <a name="input_enable_unrestricted_egress"></a> [enable\_unrestricted\_egress](#input\_enable\_unrestricted\_egress) | Allow all outbound traffic (all protocols, all ports, 0.0.0.0/0). When false, only egress\_security\_rules are applied. | `bool` | `true` | no |
 | <a name="input_fault_domain"></a> [fault\_domain](#input\_fault\_domain) | The fault domain for the instance (FAULT-DOMAIN-1, FAULT-DOMAIN-2, or FAULT-DOMAIN-3) | `string` | `"FAULT-DOMAIN-2"` | no |
 | <a name="input_freeform_tags"></a> [freeform\_tags](#input\_freeform\_tags) | Freeform tags to apply to all resources | `map(string)` | <pre>{<br/>  "ManagedBy": "Terraform"<br/>}</pre> | no |
 | <a name="input_install_runtipi"></a> [install\_runtipi](#input\_install\_runtipi) | Whether to install RunTipi homeserver (https://runtipi.io) | `bool` | `true` | no |
@@ -243,7 +246,8 @@ No modules.
 | <a name="input_runtipi_main_network_subnet"></a> [runtipi\_main\_network\_subnet](#input\_runtipi\_main\_network\_subnet) | The Docker network subnet for RunTipi containers | `string` | `"172.18.0.0/16"` | no |
 | <a name="input_runtipi_reverse_proxy_ip"></a> [runtipi\_reverse\_proxy\_ip](#input\_runtipi\_reverse\_proxy\_ip) | The static IP for RunTipi reverse proxy (Traefik). Must be within runtipi\_main\_network\_subnet | `string` | `"172.18.0.254"` | no |
 | <a name="input_ssh_public_key"></a> [ssh\_public\_key](#input\_ssh\_public\_key) | The public key to use for SSH access | `string` | n/a | yes |
-| <a name="input_subnet_cidr_block"></a> [subnet\_cidr\_block](#input\_subnet\_cidr\_block) | The CIDR block for the subnet | `string` | `"10.1.0.0/24"` | no |
+| <a name="input_ssh_source_cidr"></a> [ssh\_source\_cidr](#input\_ssh\_source\_cidr) | Source CIDR allowed for SSH access (default: 0.0.0.0/0 — all IPs) | `string` | `"0.0.0.0/0"` | no |
+| <a name="input_subnet_cidr_block"></a> [subnet\_cidr\_block](#input\_subnet\_cidr\_block) | The CIDR block for the subnet (must be within vcn\_cidr\_block; OCI will reject it at apply time otherwise) | `string` | `"10.1.0.0/24"` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | The OCID of the tenancy | `string` | n/a | yes |
 | <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | The OCID of the user to use for authentication | `string` | n/a | yes |
 | <a name="input_vcn_cidr_block"></a> [vcn\_cidr\_block](#input\_vcn\_cidr\_block) | The CIDR block for the VCN | `string` | `"10.1.0.0/16"` | no |

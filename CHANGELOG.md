@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] - 2026-02-11
+## [4.0.0] - 2026-02-12
 
 ### Breaking Changes
 
@@ -122,7 +122,12 @@ instance_shape_config_ocpus = 4
 
 - **New Variables:**
   - `enable_ping` - Allow ICMP echo requests (default: `false`)
-  - `custom_ingress_security_rules` - Simplified custom ingress rules (just protocol + ports)
+  - `ssh_source_cidr` - Restrict SSH access to specific CIDR (default: `0.0.0.0/0`)
+  - `enable_unrestricted_egress` - Allow all outbound traffic (default: `true`). Set to `false` to apply restrictive `egress_security_rules`
+  - `custom_ingress_security_rules` - Simplified custom ingress rules (protocol + ports + source, all validated)
+- **Input Validation:**
+  - `custom_ingress_security_rules`: protocol must be `"6"` or `"17"`, ports 1-65535, `port_min <= port_max`, source must be valid CIDR
+  - `ssh_source_cidr`: must be valid CIDR notation
 - **New Output:**
   - `security_list_id` - Security list OCID
 - **Free Tier Validations:**
@@ -143,7 +148,10 @@ instance_shape_config_ocpus = 4
 
 - **File Organization:** `main.tf` split into `network.tf`, `compute.tf`, `storage.tf` for readability
 - **Compute Instance:** Added `lifecycle { ignore_changes = [metadata["user_data"]] }` to prevent instance recreation when startup script changes
+- **Block Volume:** Changed `vpus_per_gb` from `0` (Lower Cost, removed in OCI provider v8.0.0) to `10` (Balanced, included in Free Tier). Removed `autotune_policies` block.
 - **Backup Policy:** Reduced retention from 5 days to 3 days (Free Tier allows only 5 total backups across boot + block volumes)
+- **Route Table:** Added `freeform_tags` to `oci_core_default_route_table` for consistency with all other resources
+- **CI/CD:** Added `per_page: 100` to PR comment lookup to handle PRs with many comments
 - **Dockerfile:** Refactored to multi-stage build (build tools excluded from final image, ~40% smaller)
 - **Tool Versions:** Trivy 0.69.1, tflint 0.61.0
 
@@ -153,9 +161,10 @@ instance_shape_config_ocpus = 4
   - Replaced `gpg --dearmor` with direct `.asc` key (gpg binary not available in Ubuntu Minimal)
   - Removed `gnupg` from package install (no longer needed)
 - **Startup Script — Disk Mount on First Boot:**
-  - Changed `mkfs.ext4` to lazy inode/journal init (was blocking for minutes on 150GB / 0 VPU volumes)
+  - Changed `mkfs.ext4` to lazy inode/journal init (was blocking for minutes on 150GB volumes)
   - Added 30-attempt retry loop for block device detection (volume attachment may be in progress)
-  - Fixed fallback `/dev/sdb` logic that could trigger prematurely inside the retry loop
+  - Fixed fallback `/dev/sdb` logic: now applies same partition/mount safety checks as the detection loop
+  - Added UUID retry loop (up to 10 attempts) for `blkid` after `mkfs` with lazy init
 - **Startup Script — APT Reliability:**
   - Added `DEBIAN_FRONTEND=noninteractive` to prevent interactive prompts
   - Added `DPkg::Lock::Timeout=60` to all apt-get commands (race with unattended-upgrades)
@@ -164,7 +173,7 @@ instance_shape_config_ocpus = 4
 - **Startup Script — Mount Stability:**
   - Changed fstab from device path (`/dev/sdb`) to UUID-based entries (device paths can change between reboots)
 - **Startup Script — WireGuard:**
-  - Made WireGuard initialization non-fatal (logs error instead of blocking entire setup)
+  - Made WireGuard fully non-fatal: both `systemctl enable --now` and `wg show` are guarded against `set -e`
 - **Ubuntu Image OCIDs:** Updated all 36 regions to latest 2025.10.31 release
 
 ## [3.0.0] - 2025-12-15

@@ -3,14 +3,9 @@ resource "oci_core_volume" "docker_volume" {
   compartment_id      = var.compartment_ocid
   availability_domain = data.oci_identity_availability_domain.ad.name
   size_in_gbs         = var.docker_volume_size_gb
-  vpus_per_gb         = 0
+  vpus_per_gb         = 10
   kms_key_id          = var.kms_key_id
   freeform_tags       = var.freeform_tags
-
-  autotune_policies {
-    autotune_type   = "PERFORMANCE_BASED"
-    max_vpus_per_gb = 10
-  }
 
   lifecycle {
     prevent_destroy = true

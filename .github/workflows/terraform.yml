@@ -34,42 +34,81 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: make build
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: opentofu-oci-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Check formatting
         id: fmt
-        run: make fmt-check
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu fmt -check -recursive -diff
 
       - name: Validate
         id: validate
-        run: make validate
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu init -backend=false
+          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu validate
 
       - name: Lint
         id: lint
-        run: make lint
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tflint --init
+          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tflint
         continue-on-error: true
 
       - name: Shellcheck
         id: shellcheck
-        run: make shellcheck
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test shellcheck -x scripts/*.sh
 
       - name: Security scan
         id: security
-        run: make security
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test trivy config --severity HIGH,CRITICAL .
         continue-on-error: true
 
       - name: Check docs are up-to-date
         id: docs
-        if: github.event_name == 'pull_request'
-        run: make docs-check
+        if: ${{ github.event_name == 'pull_request' && !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test terraform-docs markdown table --output-file README.md --output-mode inject .
+          git diff --exit-code README.md || (echo "README.md is out of date. Run 'make docs' and commit." && exit 1)
+
+      - name: Security scan (SARIF)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: "config"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
+
+      - name: Upload Trivy SARIF
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: "trivy-results.sarif"
+          category: "security-sarif"
 
       - name: Post results to PR
-        if: github.event_name == 'pull_request' && !cancelled()
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
         uses: actions/github-script@v8
         with:
           script: |
@@ -110,6 +149,7 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
+              per_page: 100,
             });
             const existing = comments.find(c => c.body.includes(marker));
 
@@ -128,25 +168,3 @@ jobs:
                 body: body,
               });
             }
-
-  security-sarif:
-    name: Security SARIF
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.33.1
-        with:
-          scan-type: "config"
-          scan-ref: "."
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH,MEDIUM"
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: "trivy-results.sarif"

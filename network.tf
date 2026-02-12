@@ -4,7 +4,7 @@ locals {
     {
       description  = "Allow SSH"
       protocol     = "6"
-      source       = "0.0.0.0/0"
+      source       = var.ssh_source_cidr
       stateless    = false
       tcp_options  = { min = 22, max = 22 }
       udp_options  = null
@@ -84,6 +84,20 @@ locals {
     local.runtipi_ingress_rules,
     local.custom_ingress_rules
   )
+
+  # Egress: unrestricted (all protocols) or user-provided restrictive rules
+  egress_security_rules = var.enable_unrestricted_egress ? [
+    {
+      description      = "Allow all outbound traffic"
+      protocol         = "all"
+      destination      = "0.0.0.0/0"
+      destination_type = "CIDR_BLOCK"
+      stateless        = false
+      tcp_options      = null
+      udp_options      = null
+      icmp_options     = null
+    }
+  ] : var.egress_security_rules
 }
 
 resource "oci_core_vcn" "vcn" {
@@ -116,6 +130,7 @@ resource "oci_core_internet_gateway" "internet_gateway" {
 
 resource "oci_core_default_route_table" "default_route_table" {
   manage_default_resource_id = oci_core_vcn.vcn.default_route_table_id
+  freeform_tags              = var.freeform_tags
 
   route_rules {
     destination       = "0.0.0.0/0"
@@ -165,7 +180,7 @@ resource "oci_core_security_list" "security_list" {
   }
 
   dynamic "egress_security_rules" {
-    for_each = var.egress_security_rules
+    for_each = local.egress_security_rules
     content {
       description      = egress_security_rules.value.description
       protocol         = egress_security_rules.value.protocol

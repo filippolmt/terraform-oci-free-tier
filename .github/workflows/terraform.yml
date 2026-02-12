@@ -92,7 +92,7 @@ jobs:
 
       - name: Security scan (SARIF)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.0
         with:
           scan-type: "config"
           scan-ref: "."

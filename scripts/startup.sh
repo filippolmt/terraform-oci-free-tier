@@ -103,14 +103,17 @@ usermod -aG docker "$USER_NAME"
 # Add additional SSH public key
 if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
   log "Add additional SSH public key"
-  AUTHORIZED_KEYS_FILE="$USER_HOME/.ssh/authorized_keys"
-  mkdir -p "$(dirname "$AUTHORIZED_KEYS_FILE")"
-  chmod 700 "$(dirname "$AUTHORIZED_KEYS_FILE")"
+  SSH_DIR="$USER_HOME/.ssh"
+  AUTHORIZED_KEYS_FILE="$SSH_DIR/authorized_keys"
+  mkdir -p "$SSH_DIR"
+  chmod 700 "$SSH_DIR"
   touch "$AUTHORIZED_KEYS_FILE"
   chmod 600 "$AUTHORIZED_KEYS_FILE"
+  chown "$USER_NAME":"$USER_NAME" "$SSH_DIR"
   chown "$USER_NAME":"$USER_NAME" "$AUTHORIZED_KEYS_FILE"
-  chown "$USER_NAME":"$USER_NAME" "$(dirname "$AUTHORIZED_KEYS_FILE")"
-  grep -qxF "${ADDITIONAL_SSH_PUB_KEY}" "$AUTHORIZED_KEYS_FILE" || echo "${ADDITIONAL_SSH_PUB_KEY}" >>"$AUTHORIZED_KEYS_FILE"
+  grep -qxF "${ADDITIONAL_SSH_PUB_KEY}" "$AUTHORIZED_KEYS_FILE" || cat >>"$AUTHORIZED_KEYS_FILE" <<'SSH_KEY'
+${ADDITIONAL_SSH_PUB_KEY}
+SSH_KEY
 fi
 
 # Auto-detect the secondary block device (not the boot disk)
@@ -207,26 +210,43 @@ if ! mountpoint -q "$MNT_DIR"; then
   exit 1
 fi
 
+# Ensure Docker waits for the block volume mount on reboot.
+# Without this, Docker may start before /mnt/data is mounted, causing
+# Coolify/RunTipi containers to see an empty directory via the symlink.
+MNT_UNIT=$(systemd-escape --path "$MNT_DIR").mount
+DOCKER_OVERRIDE="/etc/systemd/system/docker.service.d"
+if [ ! -f "$DOCKER_OVERRIDE/wait-for-mount.conf" ]; then
+  mkdir -p "$DOCKER_OVERRIDE"
+  cat >"$DOCKER_OVERRIDE/wait-for-mount.conf" <<EOF
+[Unit]
+After=$MNT_UNIT
+Requires=$MNT_UNIT
+EOF
+  systemctl daemon-reload
+  log "Docker configured to wait for $MNT_DIR mount on boot"
+fi
+
 # Install Runtipi
 if [ "${INSTALL_RUNTIPI}" == "true" ]; then
   log "Install Runtipi"
-  if [ ! -d "$MNT_DIR/runtipi" ]; then
-    cd "$MNT_DIR" || exit
+  RUNTIPI_HOME="$MNT_DIR/runtipi"
+  RUNTIPI_USER_CONFIG="$RUNTIPI_HOME/user-config"
 
+  if [ ! -d "$RUNTIPI_HOME" ]; then
     # Download Runtipi installer to a file instead of piping to bash
     RUNTIPI_INSTALLER="/tmp/runtipi-setup.sh"
     log "Downloading Runtipi installer..."
     retry 3 10 curl -fsSL https://setup.runtipi.io -o "$RUNTIPI_INSTALLER"
 
-    # Make executable and run
+    # Make executable and run (subshell to preserve working directory)
     chmod +x "$RUNTIPI_INSTALLER"
     log "Running Runtipi installer..."
-    bash "$RUNTIPI_INSTALLER"
+    (cd "$MNT_DIR" && bash "$RUNTIPI_INSTALLER")
     rm -f "$RUNTIPI_INSTALLER"
   fi
 
   # Configure Runtipi
-  RUNTIPI_CONFIG_FILE="$MNT_DIR/runtipi/user-config/tipi-compose.yml"
+  RUNTIPI_CONFIG_FILE="$RUNTIPI_USER_CONFIG/tipi-compose.yml"
   if [ ! -f "$RUNTIPI_CONFIG_FILE" ]; then
     mkdir -p "$(dirname "$RUNTIPI_CONFIG_FILE")"
     cat >"$RUNTIPI_CONFIG_FILE" <<EOL
@@ -246,7 +266,7 @@ EOL
   fi
 
   # Configure AdGuard
-  AD_GUARD_COMPOSE_FILE="$MNT_DIR/runtipi/user-config/adguard/docker-compose.yml"
+  AD_GUARD_COMPOSE_FILE="$RUNTIPI_USER_CONFIG/adguard/docker-compose.yml"
   if [ ! -f "$AD_GUARD_COMPOSE_FILE" ]; then
     mkdir -p "$(dirname "$AD_GUARD_COMPOSE_FILE")"
     cat >"$AD_GUARD_COMPOSE_FILE" <<EOL
@@ -260,10 +280,10 @@ EOL
   fi
 
   # Configure Wireguard
-  WIREGUARD_COMPOSE_FILE="$MNT_DIR/runtipi/user-config/wg-easy/docker-compose.yml"
+  WIREGUARD_COMPOSE_FILE="$RUNTIPI_USER_CONFIG/wg-easy/docker-compose.yml"
   if [ ! -f "$WIREGUARD_COMPOSE_FILE" ]; then
     mkdir -p "$(dirname "$WIREGUARD_COMPOSE_FILE")"
-    cat >"$WIREGUARD_COMPOSE_FILE" <<EOL
+    cat >"$WIREGUARD_COMPOSE_FILE" <<'EOL'
 services:
   wg-easy:
     environment:
@@ -276,9 +296,90 @@ EOL
   fi
 
   # Start Runtipi
-  cd "$MNT_DIR/runtipi" || exit
-  ./runtipi-cli start
+  (cd "$RUNTIPI_HOME" && ./runtipi-cli start)
   log "Start Runtipi"
+fi
+
+# Install Coolify
+if [ "${INSTALL_COOLIFY}" == "true" ]; then
+  log "Install Coolify"
+
+  # Redirect Coolify data to block volume via symlink
+  COOLIFY_DATA="$MNT_DIR/coolify"
+  COOLIFY_HOME="/data/coolify"
+  COOLIFY_SOURCE="$COOLIFY_HOME/source"
+  COOLIFY_ENV="$COOLIFY_SOURCE/.env"
+
+  mkdir -p "$COOLIFY_DATA"
+  if [ ! -e "$COOLIFY_HOME" ]; then
+    mkdir -p /data
+    ln -sf "$COOLIFY_DATA" "$COOLIFY_HOME"
+  elif [ -L "$COOLIFY_HOME" ]; then
+    LINK_TARGET=$(readlink -f "$COOLIFY_HOME")
+    if [ "$LINK_TARGET" != "$(readlink -f "$COOLIFY_DATA")" ]; then
+      log_error "$COOLIFY_HOME is a symlink to $LINK_TARGET instead of $COOLIFY_DATA — data may not be on the block volume"
+      exit 1
+    fi
+  else
+    log_error "$COOLIFY_HOME exists as a regular directory — data is on the boot volume, not the block volume. Remove it and re-run to use the block volume."
+    exit 1
+  fi
+
+  # Configure installer environment variables
+  # Use heredoc to safely handle special characters in credentials
+  if [ -n "${COOLIFY_ADMIN_EMAIL}" ]; then
+    export ROOT_USER_EMAIL
+    read -r ROOT_USER_EMAIL <<'CRED_EMAIL'
+${COOLIFY_ADMIN_EMAIL}
+CRED_EMAIL
+  fi
+  if [ -n "${COOLIFY_ADMIN_PASSWORD}" ]; then
+    export ROOT_USER_PASSWORD
+    read -r ROOT_USER_PASSWORD <<'CRED_PASS'
+${COOLIFY_ADMIN_PASSWORD}
+CRED_PASS
+  fi
+  if [ "${COOLIFY_AUTO_UPDATE}" == "true" ]; then
+    export AUTOUPDATE=true
+  else
+    export AUTOUPDATE=false
+  fi
+
+  # Download and run installer (skip if already installed)
+  if [ ! -f "$COOLIFY_ENV" ]; then
+    COOLIFY_INSTALLER="/tmp/coolify-install.sh"
+    log "Downloading Coolify installer..."
+    retry 3 10 curl -fsSL https://cdn.coollabs.io/coolify/install.sh -o "$COOLIFY_INSTALLER"
+    chmod +x "$COOLIFY_INSTALLER"
+
+    log "Running Coolify installer..."
+    bash "$COOLIFY_INSTALLER"
+    rm -f "$COOLIFY_INSTALLER"
+  else
+    log "Coolify already installed, skipping installer"
+    (cd "$COOLIFY_SOURCE" && docker compose up -d)
+    log "Started existing Coolify installation"
+  fi
+
+  # Configure FQDN if provided
+  if [ -n "${COOLIFY_FQDN}" ]; then
+    if [ -f "$COOLIFY_ENV" ]; then
+      if grep -q "^APP_URL=" "$COOLIFY_ENV"; then
+        sed -i "s|^APP_URL=.*|APP_URL=https://${COOLIFY_FQDN}|" "$COOLIFY_ENV"
+        log "Configured Coolify FQDN: ${COOLIFY_FQDN}"
+        (cd "$COOLIFY_SOURCE" && docker compose up -d --force-recreate)
+        log "Restarted Coolify with new FQDN"
+      else
+        log_error "APP_URL key not found in $COOLIFY_ENV — FQDN not configured. Check Coolify .env format."
+        exit 1
+      fi
+    else
+      log_error "Coolify .env not found at $COOLIFY_ENV — FQDN not configured (check Coolify installation)"
+      exit 1
+    fi
+  fi
+
+  log "Coolify setup completed"
 fi
 
 # Install and configure Wireguard
@@ -290,7 +391,9 @@ if [ -n "${WIREGUARD_CLIENT_CONFIGURATION}" ]; then
   fi
 
   WIREGUARD_CONF_FILE="/etc/wireguard/wg0.conf"
-  echo "${WIREGUARD_CLIENT_CONFIGURATION}" >"$WIREGUARD_CONF_FILE"
+  cat >"$WIREGUARD_CONF_FILE" <<'WG_CONF'
+${WIREGUARD_CLIENT_CONFIGURATION}
+WG_CONF
   chmod 600 "$WIREGUARD_CONF_FILE"
   log "Create $WIREGUARD_CONF_FILE file configuration for WireGuard"
 

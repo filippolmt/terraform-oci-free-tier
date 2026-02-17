@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-02-17
+
+### Added
+
+- **Coolify Self-Hosted PaaS Support:**
+  - `install_coolify` variable for Coolify self-hosted PaaS (https://coolify.io)
+  - `coolify_fqdn` — optional domain for HTTPS access (updates `APP_URL` in Coolify config)
+  - `coolify_admin_email` / `coolify_admin_password` — pre-configure admin account (skips manual web UI setup)
+  - `coolify_auto_update` — control automatic updates (default: `true`)
+  - Mutual exclusion validation between `install_runtipi` and `install_coolify` (both use ports 80/443) — enforced via `precondition` on `oci_core_instance`
+  - Credentials completeness validation (`coolify_admin_email` and `coolify_admin_password` must both be set or both empty) — enforced via `precondition` on `oci_core_instance`
+  - Coolify firewall rules (8000/TCP for UI, 6001-6002/TCP for real-time soketi, 80/TCP and 443/TCP for proxied apps)
+  - `coolify_admin_source_cidr` — restrict source CIDR for Coolify admin ports (8000, 6001-6002) independently of app traffic (default: `0.0.0.0/0`)
+  - Coolify data redirected to block volume via symlink (`/data/coolify` → `/mnt/data/coolify`)
+
+### Changed
+
+- **Mutual exclusion and credential validations** moved from advisory `check` blocks (warnings only) to `precondition` blocks on `oci_core_instance` (hard errors that block `apply`)
+
+### Fixed
+
+- **Startup script — Docker mount race condition on reboot:** Added systemd override (`Requires=mnt-data.mount`) so Docker waits for the block volume before starting. Without this, Coolify/RunTipi containers could start against an empty mount point.
+- **Startup script — WireGuard compose heredoc crash:** The `$${...}` Docker compose variables were expanded by bash (unquoted heredoc + `set -u`), causing a runtime crash. Fixed with quoted heredoc `<<'EOL'`.
+- **Startup script — WireGuard config special character injection:** `echo` with double quotes could break on `$` or backticks in the config. Replaced with quoted heredoc `<<'WG_CONF'`.
+- **Startup script — RunTipi `cd` leaked working directory:** `cd` without subshell left cwd at `$MNT_DIR/runtipi` for subsequent sections. Wrapped in `(cd ... && command)` subshells.
+
 ## [4.1.0] - 2026-02-17
 
 ### Added

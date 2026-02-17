@@ -56,11 +56,25 @@ resource "oci_core_instance" "instance" {
   metadata = {
     ssh_authorized_keys = var.ssh_public_key
     user_data = base64encode(templatefile("${path.module}/scripts/startup.sh", {
-      ADDITIONAL_SSH_PUB_KEY         = var.additional_ssh_public_key,
-      INSTALL_RUNTIPI                = var.install_runtipi,
-      RUNTIPI_REVERSE_PROXY_IP       = var.runtipi_reverse_proxy_ip,
-      RUNTIPI_MAIN_NETWORK_SUBNET    = var.runtipi_main_network_subnet,
-      RUNTIPI_ADGUARD_IP             = var.runtipi_adguard_ip,
+      ADDITIONAL_SSH_PUB_KEY      = var.additional_ssh_public_key,
+      INSTALL_RUNTIPI             = var.install_runtipi,
+      RUNTIPI_REVERSE_PROXY_IP    = var.runtipi_reverse_proxy_ip,
+      RUNTIPI_MAIN_NETWORK_SUBNET = var.runtipi_main_network_subnet,
+      RUNTIPI_ADGUARD_IP          = var.runtipi_adguard_ip,
+      INSTALL_COOLIFY             = var.install_coolify,
+      COOLIFY_FQDN                = var.coolify_fqdn,
+      COOLIFY_ADMIN_EMAIL         = var.coolify_admin_email,
+      # SECURITY NOTE:
+      # COOLIFY_ADMIN_PASSWORD is rendered into instance user_data via templatefile().
+      # This value will be stored in plaintext in both Terraform state and OCI instance
+      # metadata. Ensure that:
+      #   - Access to Terraform state and OCI instance metadata is strictly controlled, and
+      #   - The Coolify admin password is rotated from within Coolify immediately after
+      #     first login / provisioning.
+      # For stronger security, consider provisioning the admin password via OCI Vault or
+      # another out-of-band mechanism instead of injecting it via user_data.
+      COOLIFY_ADMIN_PASSWORD         = var.coolify_admin_password,
+      COOLIFY_AUTO_UPDATE            = var.coolify_auto_update,
       WIREGUARD_CLIENT_CONFIGURATION = var.wireguard_client_configuration,
     }))
   }
@@ -71,5 +85,15 @@ resource "oci_core_instance" "instance" {
 
   lifecycle {
     ignore_changes = [metadata["user_data"]]
+
+    precondition {
+      condition     = !(var.install_runtipi && var.install_coolify)
+      error_message = "install_runtipi and install_coolify are mutually exclusive — both use ports 80/443."
+    }
+
+    precondition {
+      condition     = (var.coolify_admin_email == "") == (var.coolify_admin_password == "")
+      error_message = "coolify_admin_email and coolify_admin_password must both be set or both be empty."
+    }
   }
 }

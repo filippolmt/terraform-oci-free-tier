@@ -1,10 +1,23 @@
-# Oracle API Key
-TF_VAR_oracle_api_key_fingerprint=
-# Oracle Cloud Infrastructure User OCID
-TF_VAR_user_ocid=
-# Oracle Cloud Infrastructure Tenancy OCID
-TF_VAR_tenancy_ocid=
-# Oracle Cloud Infrastructure Compartment OCID
-TF_VAR_compartment_ocid=
-# SSH Public Key for the Oracle Cloud Infrastructure Compute Instance
-TF_VAR_ssh_public_key=
+# Copy this file to terraform.tfvars and fill in the values.
+# All values are available in the OCI Console: https://cloud.oracle.com
+
+# API key fingerprint — OCI Console → Profile → API Keys → Fingerprint column
+# Format: aa:bb:cc:dd:...
+oracle_api_key_fingerprint = ""
+
+# User OCID — OCI Console → Profile → My profile → OCID (copy)
+# Format: ocid1.user.oc1..aaaaaa...
+user_ocid = ""
+
+# Tenancy OCID — OCI Console → Profile → Tenancy → OCID (copy)
+# Format: ocid1.tenancy.oc1..aaaaaa...
+tenancy_ocid = ""
+
+# Compartment OCID — OCI Console → Identity → Compartments → select compartment → OCID (copy)
+# Use root compartment OCID (same as tenancy) for Free Tier
+# Format: ocid1.compartment.oc1..aaaaaa... (or ocid1.tenancy.oc1..aaaaaa...)
+compartment_ocid = ""
+
+# SSH public key — paste the full contents of your ~/.ssh/id_rsa.pub (or id_ed25519.pub)
+# Format: ssh-rsa AAAAB3... user@host  or  ssh-ed25519 AAAAC3... user@host
+ssh_public_key = ""

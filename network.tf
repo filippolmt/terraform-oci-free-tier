@@ -1,82 +1,59 @@
 locals {
+  # All rule groups use for-expressions with per-field conditionals to avoid
+  # OpenTofu tuple-to-list type-unification errors with mixed null/object fields.
+
   # Base ingress rules (always enabled)
-  base_ingress_rules = [
-    {
-      description  = "Allow SSH"
-      protocol     = "6"
-      source       = var.ssh_source_cidr
-      stateless    = false
-      tcp_options  = { min = 22, max = 22 }
-      udp_options  = null
-      icmp_options = null
-    },
-    {
-      description  = "Allow ICMP fragmentation needed"
-      protocol     = "1"
-      source       = "0.0.0.0/0"
-      stateless    = false
-      tcp_options  = null
-      udp_options  = null
-      icmp_options = { type = 3, code = 4 }
-    }
-  ]
+  base_ingress_rules = [for rule in [
+    { description = "Allow SSH", protocol = "6", source = var.ssh_source_cidr, port_min = 22, port_max = 22, icmp_type = null, icmp_code = null },
+    { description = "Allow ICMP fragmentation needed", protocol = "1", source = "0.0.0.0/0", port_min = null, port_max = null, icmp_type = 3, icmp_code = 4 },
+    ] : {
+    description  = rule.description
+    protocol     = rule.protocol
+    source       = rule.source
+    stateless    = false
+    tcp_options  = rule.protocol == "6" ? { min = rule.port_min, max = rule.port_max } : null
+    udp_options  = rule.protocol == "17" ? { min = rule.port_min, max = rule.port_max } : null
+    icmp_options = rule.protocol == "1" ? { type = rule.icmp_type, code = rule.icmp_code } : null
+  }]
 
   # Ping rule (optional, disabled by default)
-  ping_ingress_rule = var.enable_ping ? [
-    {
-      description  = "Allow ICMP echo request (ping)"
-      protocol     = "1"
-      source       = "0.0.0.0/0"
-      stateless    = false
-      tcp_options  = null
-      udp_options  = null
-      icmp_options = { type = 8, code = 0 }
-    }
-  ] : []
+  ping_ingress_rule = var.enable_ping ? [for rule in [
+    { description = "Allow ICMP echo request (ping)", protocol = "1", source = "0.0.0.0/0", port_min = null, port_max = null, icmp_type = 8, icmp_code = 0 },
+    ] : {
+    description  = rule.description
+    protocol     = rule.protocol
+    source       = rule.source
+    stateless    = false
+    tcp_options  = null
+    udp_options  = null
+    icmp_options = { type = rule.icmp_type, code = rule.icmp_code }
+  }] : []
 
   # RunTipi ingress rules (HTTP, HTTPS, WireGuard — only when enabled)
-  runtipi_ingress_rules = var.install_runtipi ? [
-    {
-      description  = "Allow HTTP (RunTipi)"
-      protocol     = "6"
-      source       = "0.0.0.0/0"
-      stateless    = false
-      tcp_options  = { min = 80, max = 80 }
-      udp_options  = null
-      icmp_options = null
-    },
-    {
-      description  = "Allow HTTPS (RunTipi)"
-      protocol     = "6"
-      source       = "0.0.0.0/0"
-      stateless    = false
-      tcp_options  = { min = 443, max = 443 }
-      udp_options  = null
-      icmp_options = null
-    },
-    {
-      description  = "Allow WireGuard VPN (RunTipi)"
-      protocol     = "17"
-      source       = "0.0.0.0/0"
-      stateless    = false
-      tcp_options  = null
-      udp_options  = { min = 51820, max = 51820 }
-      icmp_options = null
-    }
-  ] : []
+  runtipi_ingress_rules = var.install_runtipi ? [for rule in [
+    { description = "Allow HTTP (RunTipi)", protocol = "6", source = "0.0.0.0/0", port_min = 80, port_max = 80 },
+    { description = "Allow HTTPS (RunTipi)", protocol = "6", source = "0.0.0.0/0", port_min = 443, port_max = 443 },
+    { description = "Allow WireGuard VPN (RunTipi)", protocol = "17", source = "0.0.0.0/0", port_min = 51820, port_max = 51820 },
+    ] : {
+    description  = rule.description
+    protocol     = rule.protocol
+    source       = rule.source
+    stateless    = false
+    tcp_options  = rule.protocol == "6" ? { min = rule.port_min, max = rule.port_max } : null
+    udp_options  = rule.protocol == "17" ? { min = rule.port_min, max = rule.port_max } : null
+    icmp_options = null
+  }] : []
 
   # Transform simple custom rules into full format
-  custom_ingress_rules = [
-    for rule in var.custom_ingress_security_rules : {
-      description  = rule.description
-      protocol     = rule.protocol
-      source       = rule.source
-      stateless    = false
-      tcp_options  = rule.protocol == "6" ? { min = rule.port_min, max = rule.port_max } : null
-      udp_options  = rule.protocol == "17" ? { min = rule.port_min, max = rule.port_max } : null
-      icmp_options = null
-    }
-  ]
+  custom_ingress_rules = [for rule in var.custom_ingress_security_rules : {
+    description  = rule.description
+    protocol     = rule.protocol
+    source       = rule.source
+    stateless    = false
+    tcp_options  = rule.protocol == "6" ? { min = rule.port_min, max = rule.port_max } : null
+    udp_options  = rule.protocol == "17" ? { min = rule.port_min, max = rule.port_max } : null
+    icmp_options = null
+  }]
 
   ingress_security_rules = concat(
     local.base_ingress_rules,

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-02-17
+
+### Added
+
+- **Input Validations:**
+  - `region` — validated against the 37 supported regions in `instance_image_ocids_by_region` (clear error instead of cryptic map lookup failure)
+  - `instance_display_name` — validated for OCI hostname label constraints (alphanumeric + hyphens, starts with letter, max 63 chars)
+  - `runtipi_main_network_subnet` — CIDR format validation (consistent with `vcn_cidr_block` / `subnet_cidr_block`)
+  - `runtipi_reverse_proxy_ip` / `runtipi_adguard_ip` — IPv4 format validation
+  - `oracle_api_key_fingerprint` / `ssh_public_key` — added `nullable = false` to catch `null` values early
+- **Egress + WireGuard warning** in `enable_unrestricted_egress` description: reminds users to add outbound UDP rule when using WireGuard with restrictive egress
+
+### Changed
+
+- **Ingress rules refactored to uniform for-expression pattern** — all four rule groups (`base_ingress_rules`, `ping_ingress_rule`, `runtipi_ingress_rules`, `custom_ingress_rules`) now use the same compact for-expression with per-field conditionals, eliminating verbose null-field repetition and avoiding OpenTofu tuple-to-list type-unification errors
+- **`terraform.tfvars.template`** — converted from `TF_VAR_*` env-var format to proper HCL `.tfvars` format with comments explaining where to find each value in the OCI Console
+- **`versions.tf`** — removed stale leading blank line
+
+### Removed
+
+- Empty `modules/resources/` directory (legacy artifact)
+
 ## [4.0.0] - 2026-02-12
 
 ### Breaking Changes

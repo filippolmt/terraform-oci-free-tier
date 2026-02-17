@@ -1,6 +1,7 @@
 variable "oracle_api_key_fingerprint" {
   type        = string
   description = "The fingerprint of the OCI API public key"
+  nullable    = false
 }
 
 variable "oracle_api_private_key_path" {
@@ -13,6 +14,7 @@ variable "ssh_public_key" {
   type        = string
   description = "The public key to use for SSH access"
   sensitive   = true
+  nullable    = false
 }
 
 variable "additional_ssh_public_key" {
@@ -44,12 +46,31 @@ variable "region" {
   type        = string
   description = "The OCI region to deploy resources"
   default     = "eu-milan-1"
+
+  validation {
+    condition = contains([
+      "af-johannesburg-1", "ap-chuncheon-1", "ap-hyderabad-1", "ap-melbourne-1",
+      "ap-mumbai-1", "ap-osaka-1", "ap-seoul-1", "ap-singapore-1", "ap-sydney-1",
+      "ap-tokyo-1", "ca-montreal-1", "ca-toronto-1", "eu-amsterdam-1", "eu-frankfurt-1",
+      "eu-madrid-1", "eu-marseille-1", "eu-milan-1", "eu-paris-1", "eu-stockholm-1",
+      "eu-zurich-1", "il-jerusalem-1", "me-abudhabi-1", "me-dubai-1", "me-jeddah-1",
+      "mx-monterrey-1", "mx-queretaro-1", "sa-bogota-1", "sa-santiago-1", "sa-saopaulo-1",
+      "sa-valparaiso-1", "sa-vinhedo-1", "uk-cardiff-1", "uk-london-1", "us-ashburn-1",
+      "us-chicago-1", "us-phoenix-1", "us-sanjose-1",
+    ], var.region)
+    error_message = "Region not supported. Must match an entry in instance_image_ocids_by_region."
+  }
 }
 
 variable "instance_display_name" {
   type        = string
-  description = "The display name of the instance"
+  description = "The display name of the instance (also used as hostname label — alphanumeric and hyphens only, must start with a letter)"
   default     = "DockerHost"
+
+  validation {
+    condition     = can(regex("^[a-zA-Z][a-zA-Z0-9-]{0,62}$", var.instance_display_name))
+    error_message = "Must start with a letter, contain only letters, digits, and hyphens, and be at most 63 characters (OCI hostname label constraints)."
+  }
 }
 
 variable "vcn_cidr_block" {
@@ -170,18 +191,33 @@ variable "runtipi_main_network_subnet" {
   type        = string
   description = "The Docker network subnet for RunTipi containers"
   default     = "172.18.0.0/16"
+
+  validation {
+    condition     = can(cidrnetmask(var.runtipi_main_network_subnet))
+    error_message = "Must be valid CIDR notation (e.g. 172.18.0.0/16)."
+  }
 }
 
 variable "runtipi_reverse_proxy_ip" {
   type        = string
   description = "The static IP for RunTipi reverse proxy (Traefik). Must be within runtipi_main_network_subnet"
   default     = "172.18.0.254"
+
+  validation {
+    condition     = can(regex("^(\\d{1,3}\\.){3}\\d{1,3}$", var.runtipi_reverse_proxy_ip))
+    error_message = "Must be a valid IPv4 address (e.g. 172.18.0.254)."
+  }
 }
 
 variable "runtipi_adguard_ip" {
   type        = string
   description = "The static IP for AdGuard. Must be within runtipi_main_network_subnet and different from reverse proxy IP"
   default     = "172.18.0.253"
+
+  validation {
+    condition     = can(regex("^(\\d{1,3}\\.){3}\\d{1,3}$", var.runtipi_adguard_ip))
+    error_message = "Must be a valid IPv4 address (e.g. 172.18.0.253)."
+  }
 }
 
 variable "instance_image_ocids_by_region" {
@@ -282,7 +318,7 @@ variable "custom_ingress_security_rules" {
 
 variable "enable_unrestricted_egress" {
   type        = bool
-  description = "Allow all outbound traffic (all protocols, all ports, 0.0.0.0/0). When false, only egress_security_rules are applied."
+  description = "Allow all outbound traffic (all protocols, all ports, 0.0.0.0/0). When false, only egress_security_rules are applied. NOTE: if using WireGuard with restrictive egress, add a UDP rule for your WireGuard server endpoint port to egress_security_rules."
   default     = true
 }
 

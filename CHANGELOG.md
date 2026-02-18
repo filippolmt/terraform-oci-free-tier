@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-02-17
+
+### Added
+
+- **Coolify Self-Hosted PaaS Support:**
+  - `install_coolify` variable for Coolify self-hosted PaaS (https://coolify.io)
+  - `coolify_admin_email` / `coolify_admin_password` — pre-configure admin account (skips manual web UI setup)
+  - `coolify_auto_update` — control automatic updates (default: `true`)
+  - Mutual exclusion validation between `install_runtipi` and `install_coolify` (both use ports 80/443) — enforced via `precondition` on `oci_core_instance`
+  - Credentials completeness validation (`coolify_admin_email` and `coolify_admin_password` must both be set or both empty) — enforced via `precondition` on `oci_core_instance`
+  - Coolify firewall rules (8000/TCP for UI, 6001-6002/TCP for real-time soketi, 80/TCP and 443/TCP for proxied apps)
+  - `coolify_admin_source_cidr` — restrict source CIDR for Coolify admin ports (8000, 6001-6002) independently of app traffic (default: `0.0.0.0/0`)
+  - Coolify data redirected to block volume via symlink (`/data/coolify` → `/mnt/data/coolify`)
+
+### Changed
+
+- **Mutual exclusion and credential validations** moved from advisory `check` blocks (warnings only) to `precondition` blocks on `oci_core_instance` (hard errors that block `apply`)
+- **Startup script — two-phase architecture:** Split into Phase A (cloud-init: packages, Docker, SSH key) and Phase B (systemd oneshot service: block volume mount, app setup). Phase B uses exponential backoff (10s → 60s intervals, 60-minute cap) instead of a fixed 5-minute retry loop. Fixes the volume attachment timing race where Terraform creates the attachment only after the instance reaches RUNNING state.
+- **Removed `ignore_changes` on `user_data`:** Changes to the startup script now trigger instance recreation on `tofu apply`. Boot volume is destroyed and recreated; block volume (data) is preserved.
+
 ## [4.1.0] - 2026-02-17
 
 ### Added

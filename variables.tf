@@ -183,9 +183,58 @@ variable "docker_volume_size_gb" {
 
 variable "install_runtipi" {
   type        = bool
-  description = "Whether to install RunTipi homeserver (https://runtipi.io)"
+  description = "Whether to install RunTipi homeserver (https://runtipi.io). Mutually exclusive with install_coolify."
   default     = true
 }
+
+variable "install_coolify" {
+  type        = bool
+  description = "Whether to install Coolify self-hosted PaaS (https://coolify.io). Mutually exclusive with install_runtipi."
+  default     = false
+}
+
+
+
+variable "coolify_admin_email" {
+  type        = string
+  description = "Email for the Coolify admin account. Must be set together with coolify_admin_password. If empty, account is created via web UI on first access."
+  default     = ""
+
+  validation {
+    condition     = var.coolify_admin_email == "" || can(regex("^[^@]+@[^@]+\\.[^@]+$", var.coolify_admin_email))
+    error_message = "Must be a valid email address or empty."
+  }
+}
+
+variable "coolify_admin_password" {
+  type        = string
+  description = "Password for the Coolify admin account. Must be set together with coolify_admin_email. If empty, account is created via web UI on first access. Note: this value is embedded in cloud-init user_data (visible in instance metadata) and Terraform state — rotate after first login."
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.coolify_admin_password == "" || length(var.coolify_admin_password) >= 8
+    error_message = "Must be at least 8 characters or empty."
+  }
+}
+
+variable "coolify_auto_update" {
+  type        = bool
+  description = "Whether to enable automatic updates for Coolify"
+  default     = true
+}
+
+variable "coolify_admin_source_cidr" {
+  type        = string
+  description = "Source CIDR allowed for Coolify admin ports (8000 UI, 6001-6002 real-time). HTTP/HTTPS (80, 443) for deployed apps remain open to all. Default: 0.0.0.0/0 — all IPs."
+  default     = "0.0.0.0/0"
+
+  validation {
+    condition     = can(cidrhost(var.coolify_admin_source_cidr, 0))
+    error_message = "Must be valid CIDR notation (e.g. 0.0.0.0/0 or 203.0.113.0/24)."
+  }
+}
+
 
 variable "runtipi_main_network_subnet" {
   type        = string
@@ -285,7 +334,7 @@ variable "enable_ping" {
 }
 
 variable "custom_ingress_security_rules" {
-  description = "Additional custom ingress rules. SSH (22/TCP) and ICMP fragmentation are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when install_runtipi=true. Ping is controlled by enable_ping."
+  description = "Additional custom ingress rules. SSH (22/TCP) and ICMP fragmentation are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when install_runtipi=true. HTTP (80), HTTPS (443), Coolify UI (8000), and real-time (6001-6002) are auto-added when install_coolify=true. Ping is controlled by enable_ping."
   type = list(object({
     description = optional(string, "Custom rule")
     protocol    = string # "6" (TCP) or "17" (UDP)

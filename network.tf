@@ -44,6 +44,24 @@ locals {
     icmp_options = null
   }] : []
 
+  # Coolify ingress rules (HTTP, HTTPS, UI, real-time — only when enabled)
+  # Ports 8000 (UI), 6001-6002 (soketi real-time) are needed for IP-based access;
+  # they can be closed after configuring a custom domain via Coolify's reverse proxy.
+  coolify_ingress_rules = var.install_coolify ? [for rule in [
+    { description = "Allow HTTP (Coolify)", protocol = "6", source = "0.0.0.0/0", port_min = 80, port_max = 80 },
+    { description = "Allow HTTPS (Coolify)", protocol = "6", source = "0.0.0.0/0", port_min = 443, port_max = 443 },
+    { description = "Allow Coolify UI", protocol = "6", source = var.coolify_admin_source_cidr, port_min = 8000, port_max = 8000 },
+    { description = "Allow Coolify real-time (soketi)", protocol = "6", source = var.coolify_admin_source_cidr, port_min = 6001, port_max = 6002 },
+    ] : {
+    description  = rule.description
+    protocol     = rule.protocol
+    source       = rule.source
+    stateless    = false
+    tcp_options  = rule.protocol == "6" ? { min = rule.port_min, max = rule.port_max } : null
+    udp_options  = rule.protocol == "17" ? { min = rule.port_min, max = rule.port_max } : null
+    icmp_options = null
+  }] : []
+
   # Transform simple custom rules into full format
   custom_ingress_rules = [for rule in var.custom_ingress_security_rules : {
     description  = rule.description
@@ -59,6 +77,7 @@ locals {
     local.base_ingress_rules,
     local.ping_ingress_rule,
     local.runtipi_ingress_rules,
+    local.coolify_ingress_rules,
     local.custom_ingress_rules
   )
 

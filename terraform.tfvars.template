@@ -21,3 +21,18 @@ compartment_ocid = ""
 # SSH public key — paste the full contents of your ~/.ssh/id_rsa.pub (or id_ed25519.pub)
 # Format: ssh-rsa AAAAB3... user@host  or  ssh-ed25519 AAAAC3... user@host
 ssh_public_key = ""
+
+# --- Optional: Application Platform ---
+# Uncomment ONE of the following (mutually exclusive — both use ports 80/443):
+
+# RunTipi homeserver (default: true)
+# install_runtipi = true
+
+# Coolify self-hosted PaaS (default: false)
+# NOTE: set install_runtipi = false when enabling Coolify
+# install_runtipi = false
+# install_coolify = true
+# coolify_admin_email       = "admin@example.com"
+# coolify_admin_password    = "<your-secure-password>"
+# coolify_auto_update       = true
+# coolify_admin_source_cidr = "0.0.0.0/0"    # Restrict to your IP, e.g. "203.0.113.0/32"

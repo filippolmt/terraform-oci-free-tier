@@ -98,16 +98,18 @@ See [CHANGELOG.md](CHANGELOG.md) for version history, breaking changes, and migr
 - `variables.tf`: Defines the variables used in the Terraform configuration. Includes Free Tier validation rules for OCPUs, RAM, and volume sizes. Cross-variable validations (mutual exclusion, credential pairing) are enforced via `precondition` blocks on `oci_core_instance` in `compute.tf`.
 - `outputs.tf`: Defines the outputs of the Terraform configuration.
 - `terraform.tfvars.template`: Template for user-specific variables.
-- `scripts/startup.sh`: Cloud-init script for initial setup. Features:
-    - Completion marker to prevent re-runs on reboot
-    - Retry logic for network operations and block volume attachment
-    - Auto-detects secondary block device with retry loop
+- `scripts/startup.sh`: Cloud-init script with **two-phase architecture**:
+    - **Phase A** (cloud-init, fast): Installs packages and Docker, configures SSH key, writes Phase B script and systemd unit, exits
+    - **Phase B** (`mnt-data-setup.service`, systemd oneshot): Waits for the block device with exponential backoff (10s → 60s intervals, 60-minute cap), formats/mounts the volume, configures Docker override, installs apps, writes completion marker
+    - This solves the volume attachment timing race: Terraform creates the `volume_attachment` only after the instance is RUNNING, so cloud-init cannot reliably wait for the device in a single phase
+    - Completion marker (`/var/log/.setup_script_completed`) prevents re-runs of both phases
     - UUID-based fstab entries for reliable mounts across reboots
     - Systemd override ensures Docker waits for block volume mount on reboot
     - APT lock timeout handling to avoid race conditions with unattended-upgrades
     - Installs Docker and RunTipi (if enabled) or Coolify (if enabled); both skip re-installation if already present on the block volume
     - Coolify: symlink integrity check (aborts if `/data/coolify` is a regular directory or if the symlink points to the wrong target), pre-configures admin account, FQDN, and auto-update settings; logs an error if `.env` is not found after installation
     - Configures WireGuard client (if provided, non-fatal on failure)
+    - Monitor Phase B: `journalctl -u mnt-data-setup.service -f`; retry after failure: `systemctl restart mnt-data-setup.service`
 - `.github/workflows/`: Contains GitHub Actions workflows for CI/CD.
     - `documentation.yml`: Auto-generates terraform-docs on PRs.
     - `terraform.yml`: Runs fmt-check, validate, lint, shellcheck, security scan, and docs-check on PRs.
@@ -197,12 +199,11 @@ install_runtipi = false
 install_coolify = true
 ```
 
-### Full Pre-Configuration (skip manual web UI setup)
+### Pre-Configure Admin Account (skip manual web UI setup)
 
 ```hcl
 install_runtipi        = false
 install_coolify        = true
-coolify_fqdn           = "coolify.example.com"   # Optional: domain for HTTPS
 coolify_admin_email    = "admin@example.com"      # Pre-creates admin account
 coolify_admin_password = "your-secure-password"   # Min 8 characters
 coolify_auto_update    = true                     # Auto-update Coolify (default)
@@ -212,10 +213,10 @@ coolify_auto_update    = true                     # Auto-update Coolify (default
 
 - **Data storage**: Coolify data is redirected to the block volume via symlink (`/data/coolify` -> `/mnt/data/coolify`), ensuring persistence and backup coverage. The script validates the symlink on every run — it aborts with `exit 1` if `/data/coolify` exists as a regular directory (data would land on boot volume), and also aborts with `exit 1` if the symlink points to an unexpected target (setup is blocked until the symlink is fixed).
 - **Idempotent installation**: The installer is skipped if Coolify is already present on the block volume (checks for `/data/coolify/source/.env`). This is safe for re-runs after removing the completion marker.
-- **FQDN**: If `coolify_fqdn` is set, the installer configures `APP_URL` for HTTPS access. DNS must point to the instance's public IP. Logs a warning if the `.env` file is not found after installation.
-- **Credentials**: `coolify_admin_email` and `coolify_admin_password` must both be set or both be empty (enforced via `precondition` — hard error at plan/apply). If empty, the admin account is created manually via the web UI at `http://<PUBLIC_IP>:8000`. **Security note**: `coolify_admin_password` is embedded in cloud-init `user_data` (visible in OCI instance metadata) and stored in Terraform state. Treat it as exposed — rotate it after first login, or omit it and complete setup via the web UI.
-- **Reboot safety**: Docker is configured to wait for the block volume mount before starting, so Coolify containers restart correctly after reboot.
-- **Instance recreation**: If the instance is destroyed and recreated with the same block volume, Coolify data is preserved. Coolify containers are automatically restarted regardless of whether `coolify_fqdn` is set.
+- **FQDN / Custom domain**: Configure your domain from the Coolify web UI after installation (`http://<PUBLIC_IP>:8000` > Settings). DNS must point to the instance's public IP.
+- **Credentials**: `coolify_admin_email` and `coolify_admin_password` must both be set or both be empty (enforced via `precondition` — hard error at plan/apply). The Coolify installer requires all three of `ROOT_USERNAME`, `ROOT_USER_EMAIL`, `ROOT_USER_PASSWORD` — the script sets `ROOT_USERNAME` to the email value. If empty, the admin account is created manually via the web UI at `http://<PUBLIC_IP>:8000`. **Security note**: `coolify_admin_password` is embedded in cloud-init `user_data` (visible in OCI instance metadata) and stored in Terraform state. Treat it as exposed — rotate it after first login, or omit it and complete setup via the web UI.
+- **Reboot safety**: Docker is configured (via systemd override) to wait for the block volume mount before starting, so Coolify containers restart correctly after reboot.
+- **Instance recreation**: If the instance is destroyed and recreated with the same block volume, Coolify data is preserved. The Phase B systemd service waits for the volume to attach (up to 60 minutes with exponential backoff), mounts it, and restarts Coolify containers automatically.
 
 ## License
 
@@ -227,13 +228,13 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >=1.3 |
-| <a name="requirement_oci"></a> [oci](#requirement\_oci) | 8.1.0 |
+| <a name="requirement_oci"></a> [oci](#requirement\_oci) | 8.2.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_oci"></a> [oci](#provider\_oci) | 8.1.0 |
+| <a name="provider_oci"></a> [oci](#provider\_oci) | 8.2.0 |
 
 ## Modules
 
@@ -243,19 +244,19 @@ No modules.
 
 | Name | Type |
 |------|------|
-| [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_default_route_table) | resource |
-| [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_instance) | resource |
-| [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_internet_gateway) | resource |
-| [oci_core_public_ip.public_ip](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_public_ip) | resource |
-| [oci_core_security_list.security_list](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_security_list) | resource |
-| [oci_core_subnet.subnet](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_subnet) | resource |
-| [oci_core_vcn.vcn](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_vcn) | resource |
-| [oci_core_volume.docker_volume](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_volume) | resource |
-| [oci_core_volume_attachment.docker_volume_attachment](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_volume_attachment) | resource |
-| [oci_core_volume_backup_policy.docker_volume_backup_policy](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_volume_backup_policy) | resource |
-| [oci_core_volume_backup_policy_assignment.docker_volume_backup_policy_assignment](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/resources/core_volume_backup_policy_assignment) | resource |
-| [oci_core_private_ips.instance_private_ip](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/data-sources/core_private_ips) | data source |
-| [oci_identity_availability_domain.ad](https://registry.terraform.io/providers/oracle/oci/8.1.0/docs/data-sources/identity_availability_domain) | data source |
+| [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_default_route_table) | resource |
+| [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_instance) | resource |
+| [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_internet_gateway) | resource |
+| [oci_core_public_ip.public_ip](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_public_ip) | resource |
+| [oci_core_security_list.security_list](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_security_list) | resource |
+| [oci_core_subnet.subnet](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_subnet) | resource |
+| [oci_core_vcn.vcn](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_vcn) | resource |
+| [oci_core_volume.docker_volume](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_volume) | resource |
+| [oci_core_volume_attachment.docker_volume_attachment](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_volume_attachment) | resource |
+| [oci_core_volume_backup_policy.docker_volume_backup_policy](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_volume_backup_policy) | resource |
+| [oci_core_volume_backup_policy_assignment.docker_volume_backup_policy_assignment](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/resources/core_volume_backup_policy_assignment) | resource |
+| [oci_core_private_ips.instance_private_ip](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/data-sources/core_private_ips) | data source |
+| [oci_identity_availability_domain.ad](https://registry.terraform.io/providers/oracle/oci/8.2.0/docs/data-sources/identity_availability_domain) | data source |
 
 ## Inputs
 
@@ -268,7 +269,6 @@ No modules.
 | <a name="input_coolify_admin_password"></a> [coolify\_admin\_password](#input\_coolify\_admin\_password) | Password for the Coolify admin account. Must be set together with coolify\_admin\_email. If empty, account is created via web UI on first access. Note: this value is embedded in cloud-init user\_data (visible in instance metadata) and Terraform state — rotate after first login. | `string` | `""` | no |
 | <a name="input_coolify_admin_source_cidr"></a> [coolify\_admin\_source\_cidr](#input\_coolify\_admin\_source\_cidr) | Source CIDR allowed for Coolify admin ports (8000 UI, 6001-6002 real-time). HTTP/HTTPS (80, 443) for deployed apps remain open to all. Default: 0.0.0.0/0 — all IPs. | `string` | `"0.0.0.0/0"` | no |
 | <a name="input_coolify_auto_update"></a> [coolify\_auto\_update](#input\_coolify\_auto\_update) | Whether to enable automatic updates for Coolify | `bool` | `true` | no |
-| <a name="input_coolify_fqdn"></a> [coolify\_fqdn](#input\_coolify\_fqdn) | Fully qualified domain name for Coolify (e.g. coolify.example.com). If set, configures HTTPS access. Requires DNS to point to the instance's public IP. | `string` | `""` | no |
 | <a name="input_custom_ingress_security_rules"></a> [custom\_ingress\_security\_rules](#input\_custom\_ingress\_security\_rules) | Additional custom ingress rules. SSH (22/TCP) and ICMP fragmentation are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when install\_runtipi=true. HTTP (80), HTTPS (443), Coolify UI (8000), and real-time (6001-6002) are auto-added when install\_coolify=true. Ping is controlled by enable\_ping. | <pre>list(object({<br/>    description = optional(string, "Custom rule")<br/>    protocol    = string # "6" (TCP) or "17" (UDP)<br/>    source      = optional(string, "0.0.0.0/0")<br/>    port_min    = number<br/>    port_max    = number<br/>  }))</pre> | `[]` | no |
 | <a name="input_docker_volume_size_gb"></a> [docker\_volume\_size\_gb](#input\_docker\_volume\_size\_gb) | The size of the secondary block volume in GBs (mounted at /mnt/data for Docker data) | `number` | `150` | no |
 | <a name="input_egress_security_rules"></a> [egress\_security\_rules](#input\_egress\_security\_rules) | List of egress (outbound) security rules. Only used when enable\_unrestricted\_egress=false. Default allows HTTP, HTTPS, DNS, and NTP. | <pre>list(object({<br/>    description      = string<br/>    protocol         = string<br/>    destination      = string<br/>    destination_type = string<br/>    stateless        = bool<br/>    tcp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    udp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    icmp_options = optional(object({<br/>      type = number<br/>      code = number<br/>    }))<br/>  }))</pre> | <pre>[<br/>  {<br/>    "description": "Allow HTTPS outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 443,<br/>      "min": 443<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow HTTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 80,<br/>      "min": 80<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (UDP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (TCP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow NTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 123,<br/>      "min": 123<br/>    }<br/>  }<br/>]</pre> | no |

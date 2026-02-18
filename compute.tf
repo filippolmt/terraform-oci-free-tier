@@ -62,8 +62,10 @@ resource "oci_core_instance" "instance" {
       RUNTIPI_MAIN_NETWORK_SUBNET = var.runtipi_main_network_subnet,
       RUNTIPI_ADGUARD_IP          = var.runtipi_adguard_ip,
       INSTALL_COOLIFY             = var.install_coolify,
-      COOLIFY_FQDN                = var.coolify_fqdn,
       COOLIFY_ADMIN_EMAIL         = var.coolify_admin_email,
+      # Boolean flag avoids embedding credential values in bash [ -n ] test expressions
+      # where $-containing passwords would crash the script under set -u.
+      COOLIFY_HAS_ADMIN_CREDS = var.coolify_admin_email != "" ? "true" : "false",
       # SECURITY NOTE:
       # COOLIFY_ADMIN_PASSWORD is rendered into instance user_data via templatefile().
       # This value will be stored in plaintext in both Terraform state and OCI instance
@@ -84,8 +86,6 @@ resource "oci_core_instance" "instance" {
   }
 
   lifecycle {
-    ignore_changes = [metadata["user_data"]]
-
     precondition {
       condition     = !(var.install_runtipi && var.install_coolify)
       error_message = "install_runtipi and install_coolify are mutually exclusive — both use ports 80/443."

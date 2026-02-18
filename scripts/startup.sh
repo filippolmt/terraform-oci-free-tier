@@ -68,6 +68,8 @@ retry() {
   return 1
 }
 
+log "=== Phase A: System packages and Docker installation ==="
+
 # Set needrestart to automatic mode
 log "Set needrestart to automatic mode"
 if [ -f /etc/needrestart/needrestart.conf ]; then
@@ -116,98 +118,179 @@ ${ADDITIONAL_SSH_PUB_KEY}
 SSH_KEY
 fi
 
-# Auto-detect the secondary block device (not the boot disk)
-# Retry detection because the volume attachment may still be in progress
-log "Detecting secondary block device"
-BOOT_DEVICE=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//' | sed 's/p$//')
-DEVICE=""
-DETECT_MAX_ATTEMPTS=30
+# =============================================================================
+# Phase B: Block volume setup script (runs as systemd oneshot service)
+#
+# Written here and executed by mnt-data-setup.service to decouple volume mount
+# from cloud-init. Terraform creates the volume attachment AFTER the instance
+# reaches RUNNING state, so cloud-init cannot reliably wait for the device.
+# The systemd service waits with exponential backoff (up to 60 minutes).
+#
+# NOTE: Terraform templatefile() interpolates the ENTIRE file before bash runs.
+# All template references become literal values in the Phase B script.
+# Bash variables use $VAR (no braces) and pass through Terraform untouched.
+# =============================================================================
+log "Writing block volume setup script to /opt/mnt-data-setup.sh"
+cat >/opt/mnt-data-setup.sh <<'PHASE_B_EOF'
+#!/bin/bash
 
-for ((DETECT_ATTEMPT = 1; DETECT_ATTEMPT <= DETECT_MAX_ATTEMPTS; DETECT_ATTEMPT++)); do
-  for dev in /dev/sdb /dev/sdc /dev/sdd /dev/vdb /dev/vdc /dev/vdd /dev/nvme1n1 /dev/nvme2n1; do
-    if [ -b "$dev" ] && [ "$dev" != "$BOOT_DEVICE" ]; then
-      # Check if device has no partitions and is not mounted
-      if ! lsblk -n "$dev" | grep -q "part" && ! findmnt -n "$dev" >/dev/null 2>&1; then
-        DEVICE="$dev"
-        log "Found secondary block device: $DEVICE"
-        break 2
+set -euo pipefail
+IFS=$'\n\t'
+
+LOG_FILE="/var/log/setup_script.log"
+COMPLETION_MARKER="/var/log/.setup_script_completed"
+
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
+}
+
+log_error() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $*" | tee -a "$LOG_FILE" >&2
+}
+
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    log_error "Block volume setup failed with exit code $exit_code"
+    log_error "Check $LOG_FILE or run: journalctl -u mnt-data-setup.service"
+  fi
+  exit $exit_code
+}
+
+trap cleanup EXIT
+
+export DEBIAN_FRONTEND=noninteractive
+
+retry() {
+  local max_attempts="$1"
+  local delay="$2"
+  shift 2
+  local attempt=1
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    if "$@"; then
+      return 0
+    fi
+    log "Attempt $attempt/$max_attempts failed for: $*"
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      log "Retrying in $delay seconds..."
+      sleep "$delay"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  log_error "All $max_attempts attempts failed for: $*"
+  return 1
+}
+
+log "=== Phase B: Block volume setup and application configuration ==="
+
+MNT_DIR="/mnt/data"
+
+# Skip device detection and mount if already mounted (idempotent re-run)
+if mountpoint -q "$MNT_DIR"; then
+  log "Block volume already mounted at $MNT_DIR, skipping detection and mount"
+else
+  # Auto-detect the secondary block device (not the boot disk)
+  # Uses exponential backoff with 60-minute hard cap to handle Terraform
+  # volume attachment timing (attachment starts after instance is RUNNING)
+  log "Detecting secondary block device"
+  BOOT_DEVICE=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//' | sed 's/p$//')
+  DEVICE=""
+  MAX_WAIT=3600
+  ELAPSED=0
+  INTERVAL=10
+
+  while [ $ELAPSED -lt $MAX_WAIT ]; do
+    for dev in /dev/sdb /dev/sdc /dev/sdd /dev/vdb /dev/vdc /dev/vdd /dev/nvme1n1 /dev/nvme2n1; do
+      if [ -b "$dev" ] && [ "$dev" != "$BOOT_DEVICE" ]; then
+        # Check if device has no partitions and is not mounted
+        if ! lsblk -n "$dev" | grep -q "part" && ! findmnt -n "$dev" >/dev/null 2>&1; then
+          DEVICE="$dev"
+          log "Found secondary block device: $DEVICE"
+          break 2
+        fi
       fi
+    done
+
+    log "Waiting for block volume to attach ($ELAPSED s elapsed, next check in $INTERVAL s)..."
+    sleep "$INTERVAL"
+    ELAPSED=$((ELAPSED + INTERVAL))
+    # Exponential backoff: 10, 15, 22, 33, 49, 60, 60, 60...
+    INTERVAL=$((INTERVAL * 3 / 2))
+    if [ $INTERVAL -gt 60 ]; then
+      INTERVAL=60
     fi
   done
 
-  log "Waiting for block volume to attach (attempt $DETECT_ATTEMPT/$DETECT_MAX_ATTEMPTS)..."
-  sleep 10
-done
-
-# Fallback to /dev/sdb only after all detection attempts are exhausted
-if [ -z "$DEVICE" ]; then
-  if [ -b "/dev/sdb" ] && [ "/dev/sdb" != "$BOOT_DEVICE" ] \
-     && ! lsblk -n "/dev/sdb" | grep -q "part" \
-     && ! findmnt -n "/dev/sdb" >/dev/null 2>&1; then
-    DEVICE="/dev/sdb"
-    log "Fallback to default device: $DEVICE"
-  else
-    log_error "No secondary block device found after $DETECT_MAX_ATTEMPTS attempts"
-    exit 1
-  fi
-fi
-
-# Mount disk
-MNT_DIR="/mnt/data"
-
-log "Mount disk $DEVICE to $MNT_DIR"
-mkdir -p "$MNT_DIR"
-
-# Check if disk is formatted (use || true to prevent set -e from triggering)
-DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data" || true)
-
-if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
-  log "Format disk $DEVICE to ext4 (lazy init, background completion after mount)"
-  mkfs.ext4 -m 0 -F -E lazy_itable_init=1,lazy_journal_init=1,discard "$DEVICE"
-fi
-
-# Use UUID for fstab (device paths like /dev/sdb can change between reboots)
-# Retry blkid because UUID may not be immediately available after mkfs with lazy init
-DEVICE_UUID=""
-for ((UUID_ATTEMPT = 1; UUID_ATTEMPT <= 10; UUID_ATTEMPT++)); do
-  DEVICE_UUID=$(blkid -s UUID -o value "$DEVICE" 2>/dev/null || true)
-  if [ -n "$DEVICE_UUID" ]; then
-    break
-  fi
-  log "Waiting for UUID to become available (attempt $UUID_ATTEMPT/10)..."
-  sleep 2
-done
-
-if [ -z "$DEVICE_UUID" ]; then
-  log_error "Failed to retrieve UUID for $DEVICE"
-  exit 1
-fi
-
-log "Device $DEVICE has UUID=$DEVICE_UUID"
-FSTAB_ENTRY="UUID=$DEVICE_UUID $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
-
-if ! grep -qF "UUID=$DEVICE_UUID" /etc/fstab; then
-  echo "$FSTAB_ENTRY" | tee -a /etc/fstab
-fi
-
-# Attempts to mount a disk at a specified directory up to a maximum number of attempts.
-MAX_ATTEMPTS=20
-for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
-  if mount "$MNT_DIR" 2>/dev/null; then
-    if mountpoint -q "$MNT_DIR"; then
-      log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
-      break
+  # Fallback to /dev/sdb only after all detection attempts are exhausted
+  if [ -z "$DEVICE" ]; then
+    if [ -b "/dev/sdb" ] && [ "/dev/sdb" != "$BOOT_DEVICE" ] \
+       && ! lsblk -n "/dev/sdb" | grep -q "part" \
+       && ! findmnt -n "/dev/sdb" >/dev/null 2>&1; then
+      DEVICE="/dev/sdb"
+      log "Fallback to default device: $DEVICE"
+    else
+      log_error "No secondary block device found after $MAX_WAIT s"
+      exit 1
     fi
   fi
-  if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-    sleep 5
-  fi
-done
 
-# Verify that the disk is mounted
-if ! mountpoint -q "$MNT_DIR"; then
-  log_error "Failed to mount disk $DEVICE to $MNT_DIR after $MAX_ATTEMPTS attempts."
-  exit 1
+  # Mount disk
+  log "Mount disk $DEVICE to $MNT_DIR"
+  mkdir -p "$MNT_DIR"
+
+  # Check if disk is formatted (use || true to prevent set -e from triggering)
+  DISK_IS_FORMATTED=$(file -s "$DEVICE" | grep -c "ext4 filesystem data" || true)
+
+  if [ "$DISK_IS_FORMATTED" -eq 0 ]; then
+    log "Format disk $DEVICE to ext4 (lazy init, background completion after mount)"
+    mkfs.ext4 -m 0 -F -E lazy_itable_init=1,lazy_journal_init=1,discard "$DEVICE"
+  fi
+
+  # Use UUID for fstab (device paths like /dev/sdb can change between reboots)
+  # Retry blkid because UUID may not be immediately available after mkfs with lazy init
+  DEVICE_UUID=""
+  for ((UUID_ATTEMPT = 1; UUID_ATTEMPT <= 10; UUID_ATTEMPT++)); do
+    DEVICE_UUID=$(blkid -s UUID -o value "$DEVICE" 2>/dev/null || true)
+    if [ -n "$DEVICE_UUID" ]; then
+      break
+    fi
+    log "Waiting for UUID to become available (attempt $UUID_ATTEMPT/10)..."
+    sleep 2
+  done
+
+  if [ -z "$DEVICE_UUID" ]; then
+    log_error "Failed to retrieve UUID for $DEVICE"
+    exit 1
+  fi
+
+  log "Device $DEVICE has UUID=$DEVICE_UUID"
+  FSTAB_ENTRY="UUID=$DEVICE_UUID $MNT_DIR ext4 defaults,nofail,noatime,commit=60 0 2"
+
+  if ! grep -qF "UUID=$DEVICE_UUID" /etc/fstab; then
+    echo "$FSTAB_ENTRY" | tee -a /etc/fstab
+  fi
+
+  # Attempts to mount a disk at a specified directory up to a maximum number of attempts.
+  MAX_ATTEMPTS=20
+  for ((ATTEMPT = 1; ATTEMPT <= MAX_ATTEMPTS; ATTEMPT++)); do
+    if mount "$MNT_DIR" 2>/dev/null; then
+      if mountpoint -q "$MNT_DIR"; then
+        log "Disk $DEVICE mounted to $MNT_DIR after $ATTEMPT attempts."
+        break
+      fi
+    fi
+    if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+      sleep 5
+    fi
+  done
+
+  # Verify that the disk is mounted
+  if ! mountpoint -q "$MNT_DIR"; then
+    log_error "Failed to mount disk $DEVICE to $MNT_DIR after $MAX_ATTEMPTS attempts."
+    exit 1
+  fi
 fi
 
 # Ensure Docker waits for the block volume mount on reboot.
@@ -326,14 +409,18 @@ if [ "${INSTALL_COOLIFY}" == "true" ]; then
   fi
 
   # Configure installer environment variables
-  # Use heredoc to safely handle special characters in credentials
-  if [ -n "${COOLIFY_ADMIN_EMAIL}" ]; then
+  # Use a boolean flag (resolved at OpenTofu plan time) instead of [ -n "$CREDENTIAL" ]
+  # to avoid bash-expanding $-containing passwords under set -u (crash on unbound vars).
+  # The quoted heredocs safely transfer the raw credential values without expansion.
+  if [ "${COOLIFY_HAS_ADMIN_CREDS}" == "true" ]; then
+    export ROOT_USERNAME
+    read -r ROOT_USERNAME <<'CRED_USER'
+${COOLIFY_ADMIN_EMAIL}
+CRED_USER
     export ROOT_USER_EMAIL
     read -r ROOT_USER_EMAIL <<'CRED_EMAIL'
 ${COOLIFY_ADMIN_EMAIL}
 CRED_EMAIL
-  fi
-  if [ -n "${COOLIFY_ADMIN_PASSWORD}" ]; then
     export ROOT_USER_PASSWORD
     read -r ROOT_USER_PASSWORD <<'CRED_PASS'
 ${COOLIFY_ADMIN_PASSWORD}
@@ -359,24 +446,6 @@ CRED_PASS
     log "Coolify already installed, skipping installer"
     (cd "$COOLIFY_SOURCE" && docker compose up -d)
     log "Started existing Coolify installation"
-  fi
-
-  # Configure FQDN if provided
-  if [ -n "${COOLIFY_FQDN}" ]; then
-    if [ -f "$COOLIFY_ENV" ]; then
-      if grep -q "^APP_URL=" "$COOLIFY_ENV"; then
-        sed -i "s|^APP_URL=.*|APP_URL=https://${COOLIFY_FQDN}|" "$COOLIFY_ENV"
-        log "Configured Coolify FQDN: ${COOLIFY_FQDN}"
-        (cd "$COOLIFY_SOURCE" && docker compose up -d --force-recreate)
-        log "Restarted Coolify with new FQDN"
-      else
-        log_error "APP_URL key not found in $COOLIFY_ENV — FQDN not configured. Check Coolify .env format."
-        exit 1
-      fi
-    else
-      log_error "Coolify .env not found at $COOLIFY_ENV — FQDN not configured (check Coolify installation)"
-      exit 1
-    fi
   fi
 
   log "Coolify setup completed"
@@ -413,3 +482,35 @@ fi
 # Mark setup as completed
 touch "$COMPLETION_MARKER"
 log "Setup completed successfully"
+PHASE_B_EOF
+
+chmod +x /opt/mnt-data-setup.sh
+
+# =============================================================================
+# Systemd unit: runs Phase B after Docker is available
+# =============================================================================
+log "Writing mnt-data-setup.service systemd unit"
+cat >/etc/systemd/system/mnt-data-setup.service <<'SYSTEMD_UNIT'
+[Unit]
+Description=Mount block volume and configure applications
+After=network-online.target docker.service
+Wants=network-online.target
+ConditionPathExists=!/var/log/.setup_script_completed
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/mnt-data-setup.sh
+TimeoutStartSec=3900
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
+SYSTEMD_UNIT
+
+systemctl daemon-reload
+systemctl enable --now mnt-data-setup.service
+
+log "Phase A complete — mnt-data-setup.service will handle volume mount and application setup"
+log "Monitor progress: journalctl -u mnt-data-setup.service -f"

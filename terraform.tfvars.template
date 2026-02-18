@@ -32,7 +32,6 @@ ssh_public_key = ""
 # NOTE: set install_runtipi = false when enabling Coolify
 # install_runtipi = false
 # install_coolify = true
-# coolify_fqdn              = "coolify.example.com"
 # coolify_admin_email       = "admin@example.com"
 # coolify_admin_password    = "<your-secure-password>"
 # coolify_auto_update       = true

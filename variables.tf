@@ -193,16 +193,7 @@ variable "install_coolify" {
   default     = false
 }
 
-variable "coolify_fqdn" {
-  type        = string
-  description = "Fully qualified domain name for Coolify (e.g. coolify.example.com). If set, configures HTTPS access. Requires DNS to point to the instance's public IP."
-  default     = ""
 
-  validation {
-    condition     = var.coolify_fqdn == "" || can(regex("^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$", var.coolify_fqdn))
-    error_message = "Must be a valid domain name (e.g. coolify.example.com) or empty."
-  }
-}
 
 variable "coolify_admin_email" {
   type        = string

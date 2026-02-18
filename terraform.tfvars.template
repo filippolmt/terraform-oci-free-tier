@@ -22,6 +22,9 @@ compartment_ocid = ""
 # Format: ssh-rsa AAAAB3... user@host  or  ssh-ed25519 AAAAC3... user@host
 ssh_public_key = ""
 
+# --- Optional: System ---
+# timezone = "Europe/Rome"   # IANA timezone (default: Europe/Rome)
+
 # --- Optional: Application Platform ---
 # Uncomment ONE of the following (mutually exclusive — both use ports 80/443):
 
@@ -32,7 +35,6 @@ ssh_public_key = ""
 # NOTE: set install_runtipi = false when enabling Coolify
 # install_runtipi = false
 # install_coolify = true
-# coolify_fqdn              = "coolify.example.com"
 # coolify_admin_email       = "admin@example.com"
 # coolify_admin_password    = "<your-secure-password>"
 # coolify_auto_update       = true

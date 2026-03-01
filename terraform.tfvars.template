@@ -21,3 +21,6 @@ compartment_ocid = ""
 # SSH public key — paste the full contents of your ~/.ssh/id_rsa.pub (or id_ed25519.pub)
 # Format: ssh-rsa AAAAB3... user@host  or  ssh-ed25519 AAAAC3... user@host
 ssh_public_key = ""
+
+# Timezone — IANA timezone for the instance (default: Europe/Rome)
+# timezone = "Europe/Rome"

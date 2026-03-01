@@ -57,6 +57,7 @@ resource "oci_core_instance" "instance" {
     ssh_authorized_keys = var.ssh_public_key
     user_data = base64encode(templatefile("${path.module}/scripts/startup.sh", {
       ADDITIONAL_SSH_PUB_KEY         = var.additional_ssh_public_key,
+      TIMEZONE                       = var.timezone,
       INSTALL_RUNTIPI                = var.install_runtipi,
       RUNTIPI_REVERSE_PROXY_IP       = var.runtipi_reverse_proxy_ip,
       RUNTIPI_MAIN_NETWORK_SUBNET    = var.runtipi_main_network_subnet,

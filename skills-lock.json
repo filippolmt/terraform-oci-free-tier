@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "terraform-engineer": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "6602529277c975ee9c97db9da7b1f9189a6763a2a42c6acb468172e596f6d0be"
+    },
+    "terraform-style-guide": {
+      "source": "hashicorp/agent-skills",
+      "sourceType": "github",
+      "computedHash": "1fb650e4627c740f024b80947964769f5f5d58efff54870cef2791324d5aa451"
+    },
+    "terraform-test": {
+      "source": "hashicorp/agent-skills",
+      "sourceType": "github",
+      "computedHash": "5a62d5e759b4720304127bd1e94d405e0f91a907965d87b1117d2b91d7eb2e18"
+    }
+  }
+}

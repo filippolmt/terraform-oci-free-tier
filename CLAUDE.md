@@ -12,11 +12,24 @@ Terraform module for deploying Oracle Cloud Infrastructure (OCI) Free Tier resou
 
 ```bash
 # All testing runs through Docker via Makefile
-make test           # Run all checks: fmt-check → validate → lint → shellcheck → security
+make test           # Run all checks: fmt-check → validate → tofu-test → lint → shellcheck → security
 make fmt            # Auto-format .tf files
 make docs           # Regenerate README.md terraform-docs section
 make shell          # Interactive shell in test container
 make clean          # Remove Docker image and .terraform/
+make help           # Show all available targets
+
+# Individual checks (each auto-builds the Docker image)
+make fmt-check      # Check formatting without modifying
+make validate       # Init + validate only
+make tofu-test      # Run OpenTofu native tests only
+make lint           # Run tflint only
+make shellcheck     # Lint shell scripts only
+make security       # Trivy scan (HIGH,CRITICAL only)
+make security-all   # Trivy scan (all severities)
+
+# Run a single test file (inside Docker shell or natively)
+tofu test -filter=tests/validation_unit_test.tftest.hcl
 
 # Native equivalents (requires local tofu, tflint, trivy)
 make native-test
@@ -27,13 +40,17 @@ tofu init && tofu plan
 
 ## Architecture
 
+Requires OpenTofu/Terraform `>= 1.3` with OCI provider pinned to `8.2.0` (strict, managed by Renovate).
+
 Infrastructure is split into domain-specific files (no submodules): `network.tf` (VCN, Subnet, Internet Gateway, Route Table, Security List), `compute.tf` (Instance, Public IP, data sources), and `storage.tf` (Block Volume, Volume Attachment, Backup Policy). The module creates a compute instance (ARM64, 4 OCPUs, 24GB RAM), a separate block volume (150GB) for Docker data mounted at `/mnt/data`, a reserved public IP, and a daily backup policy (3-day retention to stay within Free Tier's 5-backup limit).
+
+State backend defaults to local. See `backend.tf.example` for OCI Object Storage (S3-compatible) remote backend configuration.
 
 ### Critical Design Details
 
 - **`prevent_destroy` on docker_volume**: The block volume in `storage.tf` has `lifecycle { prevent_destroy = true }`. Destroying the stack requires manually removing this lifecycle rule or using `tofu state rm` first.
 - **`ignore_changes` on user_data**: The instance in `compute.tf` has `lifecycle { ignore_changes = [metadata["user_data"]] }` to prevent instance recreation when the startup script changes.
-- **Startup script is a `templatefile()`**: `scripts/startup.sh` is rendered via `templatefile()` in the instance's `user_data` metadata block in `compute.tf`. Any new shell variable in the script must have a matching Terraform variable passed in the `templatefile()` call. Existing template variables: `ADDITIONAL_SSH_PUB_KEY`, `INSTALL_RUNTIPI`, `RUNTIPI_REVERSE_PROXY_IP`, `RUNTIPI_MAIN_NETWORK_SUBNET`, `RUNTIPI_ADGUARD_IP`, `WIREGUARD_CLIENT_CONFIGURATION`.
+- **Startup script is a `templatefile()`**: `scripts/startup.sh` is rendered via `templatefile()` in the instance's `user_data` metadata block in `compute.tf`. Any new shell variable in the script must have a matching Terraform variable passed in the `templatefile()` call. Existing template variables: `ADDITIONAL_SSH_PUB_KEY`, `TIMEZONE`, `INSTALL_RUNTIPI`, `RUNTIPI_REVERSE_PROXY_IP`, `RUNTIPI_MAIN_NETWORK_SUBNET`, `RUNTIPI_ADGUARD_IP`, `WIREGUARD_CLIENT_CONFIGURATION`.
 - **Free Tier validation rules**: `variables.tf` includes validation blocks that enforce Free Tier limits (max 4 OCPUs, max 24GB RAM, minimum volume sizes, CIDR format, fault domain format).
 - **Region image OCIDs**: `variables.tf` contains a `instance_image_ocids_by_region` map with Ubuntu 24.04 ARM64 image OCIDs for 35+ OCI regions. When updating the base image, every region OCID must be updated. These are managed by Renovate when possible.
 - **Ingress firewall rules**: Managed via `locals` in `network.tf`. SSH (22/TCP, source configurable via `ssh_source_cidr`) and ICMP fragmentation (type 3, code 4) are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when `install_runtipi = true`. Ping is controlled by `enable_ping` (default: false). Custom rules use `custom_ingress_security_rules` with a simplified type (protocol + ports + source, all validated). OCI protocol identifiers: `"6"` = TCP, `"17"` = UDP, `"1"` = ICMP.
@@ -41,9 +58,23 @@ Infrastructure is split into domain-specific files (no submodules): `network.tf`
 - **Block volume performance**: `vpus_per_gb = 10` (Balanced tier, included in Free Tier). The "Lower Cost" tier (`vpus_per_gb = 0`) was removed in OCI provider v8.0.0.
 - **Public IP via reserved IP**: The instance is created with `assign_public_ip = false`; instead, a reserved IP is looked up via a `data.oci_core_private_ips` data source and attached as `oci_core_public_ip`.
 
-### Startup Script (`scripts/startup.sh`)
+### Startup Script (`scripts/startup.sh`) — Two-Phase Architecture
 
-Runs via cloud-init on first boot. Uses a completion marker (`/var/log/.setup_script_completed`) to prevent re-runs. Sets `DEBIAN_FRONTEND=noninteractive` to avoid apt hangs. Uses APT lock timeout (`DPkg::Lock::Timeout=60`) to handle race conditions with `unattended-upgrades`. Adds Docker APT repo first, then does a single `apt-get update` + install for all packages. Has retry logic for network operations. Auto-detects the secondary block device with a retry loop (up to 5 minutes) for volume attachment; fallback to `/dev/sdb` applies the same partition/mount safety checks as the main loop. Formats with lazy ext4 init for fast first-boot. Uses UUID-based fstab entries with retry logic for `blkid` (up to 10 attempts). Installs Docker, optionally installs RunTipi (downloads installer to file, no `curl|bash`), and optionally configures WireGuard client (fully non-fatal: both `systemctl enable --now` and `wg show` are guarded).
+The startup script uses a two-phase architecture to handle the timing gap between instance boot and Terraform volume attachment:
+
+- **Phase A** (runs via cloud-init): System packages, Docker, SSH keys, timezone configuration — everything that doesn't need the block volume. Writes the Phase B script to `/opt/mnt-data-setup.sh` and installs a systemd oneshot service (`mnt-data-setup.service`) to execute it.
+- **Phase B** (runs via `mnt-data-setup.service`): Block volume detection with exponential backoff (up to 60 minutes), mount, Docker systemd override (ensures Docker waits for `/mnt/data` mount on reboot), RunTipi/WireGuard installation. Has its own `log()`, `log_error()`, `cleanup()`, `retry()` functions since it runs as a separate process.
+
+**Why two phases**: Terraform creates the volume attachment AFTER the instance reaches RUNNING state. Cloud-init can time out waiting; a systemd service can wait up to 60 minutes with exponential backoff (10s, 15s, 22s, 33s, 49s, 60s...). The completion marker (`/var/log/.setup_script_completed`) is set at the end of Phase B (not Phase A), and the systemd unit uses `ConditionPathExists=!/var/log/.setup_script_completed` for idempotency. Phase B also includes a `mountpoint -q` check for safe re-runs.
+
+Sets `DEBIAN_FRONTEND=noninteractive` to avoid apt hangs. Uses APT lock timeout (`DPkg::Lock::Timeout=60`) to handle race conditions with `unattended-upgrades`. Adds Docker APT repo first, then does a single `apt-get update` + install for all packages. Has retry logic for network operations. Formats with lazy ext4 init for fast first-boot. Uses UUID-based fstab entries with retry logic for `blkid` (up to 10 attempts). Installs Docker, optionally installs RunTipi (downloads installer to file, no `curl|bash`), and optionally configures WireGuard client (fully non-fatal: both `systemctl enable --now` and `wg show` are guarded).
+
+### Tests (`tests/*.tftest.hcl`)
+
+Three test files using `mock_provider` (no real OCI credentials needed):
+- `defaults_unit_test.tftest.hcl` — Validates default values for instance, volume, network, and tags.
+- `validation_unit_test.tftest.hcl` — Exercises all `validation {}` blocks in `variables.tf` (invalid CIDRs, out-of-range OCPUs/memory, bad fault domains, etc.).
+- `network_unit_test.tftest.hcl` — Tests security rule generation for various ingress/egress combinations (Runtipi on/off, ping, custom rules, restricted egress).
 
 ## CI/CD
 
@@ -59,4 +90,4 @@ Renovate (`renovate.json`) auto-updates: OCI provider version in `versions.tf`, 
 
 Required (set in `terraform.tfvars` or `TF_VAR_*` env vars): `compartment_ocid`, `tenancy_ocid`, `user_ocid`, `oracle_api_key_fingerprint`, `ssh_public_key`. See `terraform.tfvars.template` for the format.
 
-Notable optional: `install_runtipi` (default: `true`), `enable_ping` (default: `false`), `ssh_source_cidr` (default: `"0.0.0.0/0"`), `custom_ingress_security_rules` (simplified: protocol + ports + source, all validated), `enable_unrestricted_egress` (default: `true` — all outbound allowed; set to `false` for restrictive egress), `egress_security_rules` (only used when unrestricted egress is disabled), `wireguard_client_configuration` (must start with `[Interface]` or be empty), `kms_key_id` for volume encryption, `freeform_tags` (default: `{ManagedBy=Terraform}`).
+Notable optional: `install_runtipi` (default: `true`), `enable_ping` (default: `false`), `ssh_source_cidr` (default: `"0.0.0.0/0"`), `timezone` (default: `"Europe/Rome"`, IANA format), `custom_ingress_security_rules` (simplified: protocol + ports + source, all validated), `enable_unrestricted_egress` (default: `true` — all outbound allowed; set to `false` for restrictive egress), `egress_security_rules` (only used when unrestricted egress is disabled), `wireguard_client_configuration` (must start with `[Interface]` or be empty), `kms_key_id` for volume encryption, `freeform_tags` (default: `{ManagedBy=Terraform}`).

@@ -387,6 +387,17 @@ variable "egress_security_rules" {
   ]
 }
 
+variable "timezone" {
+  type        = string
+  description = "IANA timezone for the instance (e.g. Europe/Rome, America/New_York, UTC)"
+  default     = "Europe/Rome"
+
+  validation {
+    condition     = can(regex("^[A-Z][a-zA-Z0-9_+-]+(/[A-Z][a-zA-Z0-9_+-]+)*$", var.timezone)) || var.timezone == "UTC"
+    error_message = "Must be a valid IANA timezone (e.g. Europe/Rome, America/New_York, UTC)."
+  }
+}
+
 variable "wireguard_client_configuration" {
   type        = string
   description = "WireGuard client configuration (wg0.conf content). If provided, WireGuard will be installed and configured automatically"

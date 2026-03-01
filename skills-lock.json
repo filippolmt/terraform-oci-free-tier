@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "bash-master": {
+      "source": "josiahsiegel/claude-plugin-marketplace",
+      "sourceType": "github",
+      "computedHash": "9dd16f9db2bb3af50df4c85f04136e7a4222e3c283eeb3988b6d8c91c48b64b6"
+    },
     "terraform-engineer": {
       "source": "jeffallan/claude-skills",
       "sourceType": "github",

@@ -249,6 +249,7 @@ No modules.
 | <a name="input_ssh_source_cidr"></a> [ssh\_source\_cidr](#input\_ssh\_source\_cidr) | Source CIDR allowed for SSH access (default: 0.0.0.0/0 — all IPs) | `string` | `"0.0.0.0/0"` | no |
 | <a name="input_subnet_cidr_block"></a> [subnet\_cidr\_block](#input\_subnet\_cidr\_block) | The CIDR block for the subnet (must be within vcn\_cidr\_block; OCI will reject it at apply time otherwise) | `string` | `"10.1.0.0/24"` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | The OCID of the tenancy | `string` | n/a | yes |
+| <a name="input_timezone"></a> [timezone](#input\_timezone) | IANA timezone for the instance (e.g. Europe/Rome, America/New\_York, UTC) | `string` | `"Europe/Rome"` | no |
 | <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | The OCID of the user to use for authentication | `string` | n/a | yes |
 | <a name="input_vcn_cidr_block"></a> [vcn\_cidr\_block](#input\_vcn\_cidr\_block) | The CIDR block for the VCN | `string` | `"10.1.0.0/16"` | no |
 | <a name="input_wireguard_client_configuration"></a> [wireguard\_client\_configuration](#input\_wireguard\_client\_configuration) | WireGuard client configuration (wg0.conf content). If provided, WireGuard will be installed and configured automatically | `string` | `""` | no |

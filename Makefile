@@ -1,4 +1,4 @@
-.PHONY: help build fmt fmt-check init validate lint shellcheck security docs docs-check test clean shell
+.PHONY: help build fmt fmt-check init validate tofu-test lint shellcheck security docs docs-check test clean shell
 
 # Docker image name
 IMAGE_NAME := opentofu-oci-test
@@ -36,6 +36,10 @@ validate: init ## Validate OpenTofu configuration
 	@echo "$(GREEN)Validating OpenTofu configuration...$(NC)"
 	$(DOCKER_RUN) tofu validate
 
+tofu-test: init ## Run OpenTofu native tests
+	@echo "$(GREEN)Running OpenTofu native tests...$(NC)"
+	$(DOCKER_RUN) tofu test
+
 lint: build ## Run tflint
 	@echo "$(GREEN)Running tflint...$(NC)"
 	$(DOCKER_RUN) tflint --init
@@ -61,7 +65,7 @@ docs-check: docs ## Check if terraform-docs is up-to-date
 	@echo "$(GREEN)Checking if docs are up-to-date...$(NC)"
 	@git diff --exit-code README.md || (echo "$(RED)README.md is out of date. Run 'make docs' and commit.$(NC)" && exit 1)
 
-test: fmt-check validate lint shellcheck security ## Run all tests
+test: fmt-check validate tofu-test lint shellcheck security ## Run all tests
 	@echo "$(GREEN)All tests passed!$(NC)"
 
 clean: ## Clean up Docker image and OpenTofu files
@@ -75,7 +79,7 @@ shell: build ## Open a shell in the Docker container
 	docker run --rm -it -v $(PWD):/workspace $(IMAGE_NAME) /bin/bash
 
 # Native targets (without Docker)
-.PHONY: native-fmt native-validate native-lint native-shellcheck native-security native-test
+.PHONY: native-fmt native-validate native-tofu-test native-lint native-shellcheck native-security native-test
 
 native-fmt: ## Format OpenTofu files (native)
 	tofu fmt -recursive
@@ -83,6 +87,10 @@ native-fmt: ## Format OpenTofu files (native)
 native-validate: ## Validate OpenTofu configuration (native)
 	tofu init -backend=false
 	tofu validate
+
+native-tofu-test: ## Run OpenTofu native tests (native)
+	@echo "$(GREEN)Running OpenTofu native tests (native)...$(NC)"
+	tofu test
 
 native-lint: ## Run tflint (native)
 	tflint --init
@@ -94,5 +102,5 @@ native-shellcheck: ## Lint shell scripts (native)
 native-security: ## Run Trivy security scan (native)
 	trivy config --severity HIGH,CRITICAL .
 
-native-test: native-fmt native-validate native-lint native-shellcheck native-security ## Run all tests (native)
+native-test: native-fmt native-validate native-tofu-test native-lint native-shellcheck native-security ## Run all tests (native)
 	@echo "$(GREEN)All tests passed!$(NC)"

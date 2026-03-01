@@ -260,10 +260,13 @@ No modules.
 | <a name="output_availability_domain"></a> [availability\_domain](#output\_availability\_domain) | The availability domain where resources are deployed |
 | <a name="output_docker_volume_id"></a> [docker\_volume\_id](#output\_docker\_volume\_id) | The OCID of the Docker volume |
 | <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The OCID of the instance |
+| <a name="output_internet_gateway_id"></a> [internet\_gateway\_id](#output\_internet\_gateway\_id) | The OCID of the internet gateway |
 | <a name="output_private_ip"></a> [private\_ip](#output\_private\_ip) | The private IP of the instance |
 | <a name="output_public_ip"></a> [public\_ip](#output\_public\_ip) | The public IP of the instance |
 | <a name="output_security_list_id"></a> [security\_list\_id](#output\_security\_list\_id) | The OCID of the security list |
 | <a name="output_ssh_connection"></a> [ssh\_connection](#output\_ssh\_connection) | SSH command to connect to the instance |
+| <a name="output_subnet_cidr_block"></a> [subnet\_cidr\_block](#output\_subnet\_cidr\_block) | The CIDR block of the subnet |
 | <a name="output_subnet_id"></a> [subnet\_id](#output\_subnet\_id) | The OCID of the subnet |
+| <a name="output_vcn_cidr_block"></a> [vcn\_cidr\_block](#output\_vcn\_cidr\_block) | The CIDR block of the VCN |
 | <a name="output_vcn_id"></a> [vcn\_id](#output\_vcn\_id) | The OCID of the VCN |
 <!-- END_TF_DOCS -->

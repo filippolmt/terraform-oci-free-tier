@@ -1,0 +1,37 @@
+# Backend configuration examples for terraform-oci-free-tier
+#
+# Copy one of these configurations to backend.tf and customize as needed.
+# Do NOT commit backend.tf to version control if it contains sensitive values.
+
+# --- Option 1: OCI Object Storage backend (recommended for Oracle Cloud) ---
+#
+# Uses S3-compatible API to store state in OCI Object Storage.
+# Prerequisites:
+#   1. Create an Object Storage bucket in your compartment
+#   2. Create a Customer Secret Key (Amazon S3 Compatible API key)
+#   3. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables
+#
+# terraform {
+#   backend "s3" {
+#     bucket                      = "terraform-state"
+#     key                         = "oci-free-tier/terraform.tfstate"
+#     region                      = "eu-milan-1"
+#     endpoint                    = "https://<namespace>.compat.objectstorage.<region>.oraclecloud.com"
+#     skip_region_validation      = true
+#     skip_credentials_validation = true
+#     skip_metadata_api_check     = true
+#     skip_requesting_account_id  = true
+#     use_path_style              = true
+#   }
+# }
+
+# --- Option 2: Local backend (default, no configuration needed) ---
+#
+# State is stored in a local file. This is the default behavior when no
+# backend is configured. Suitable for single-developer environments.
+#
+# terraform {
+#   backend "local" {
+#     path = "terraform.tfstate"
+#   }
+# }

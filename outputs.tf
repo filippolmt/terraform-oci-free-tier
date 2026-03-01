@@ -42,3 +42,18 @@ output "security_list_id" {
   description = "The OCID of the security list"
   value       = oci_core_security_list.security_list.id
 }
+
+output "vcn_cidr_block" {
+  description = "The CIDR block of the VCN"
+  value       = oci_core_vcn.vcn.cidr_blocks[0]
+}
+
+output "subnet_cidr_block" {
+  description = "The CIDR block of the subnet"
+  value       = oci_core_subnet.subnet.cidr_block
+}
+
+output "internet_gateway_id" {
+  description = "The OCID of the internet gateway"
+  value       = oci_core_internet_gateway.internet_gateway.id
+}

@@ -193,7 +193,7 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 
 | Name | Version |
 |------|---------|
-| <a name="provider_oci"></a> [oci](#provider\_oci) | 8.3.0 |
+| <a name="provider_oci"></a> [oci](#provider\_oci) | 8.2.0 |
 
 ## Modules
 

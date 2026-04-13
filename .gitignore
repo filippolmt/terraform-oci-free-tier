@@ -37,3 +37,6 @@ terraform.rc
 .terraform.lock.hcl
 
 oracle
+
+# GSD planning artifacts (local only)
+.planning/

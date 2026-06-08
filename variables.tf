@@ -1,7 +1,24 @@
+variable "auth_method" {
+  type        = string
+  description = "OCI provider authentication method. Use \"ApiKey\" for API key auth or \"SecurityToken\" for CLI session-token auth (oci session authenticate)."
+  default     = "ApiKey"
+
+  validation {
+    condition     = contains(["ApiKey", "SecurityToken", "InstancePrincipal", "InstancePrincipalWithCerts", "ResourcePrincipal"], var.auth_method)
+    error_message = "auth_method must be one of: ApiKey, SecurityToken, InstancePrincipal, InstancePrincipalWithCerts, ResourcePrincipal."
+  }
+}
+
+variable "config_file_profile" {
+  type        = string
+  description = "Profile in ~/.oci/config to use. Relevant for SecurityToken auth (the session-token profile created by `oci session authenticate`)."
+  default     = "DEFAULT"
+}
+
 variable "oracle_api_key_fingerprint" {
   type        = string
-  description = "The fingerprint of the OCI API public key"
-  nullable    = false
+  description = "The fingerprint of the OCI API public key (required only for ApiKey auth)."
+  default     = null
 }
 
 variable "oracle_api_private_key_path" {
@@ -32,14 +49,14 @@ variable "compartment_ocid" {
 
 variable "tenancy_ocid" {
   type        = string
-  description = "The OCID of the tenancy"
-  nullable    = false
+  description = "The OCID of the tenancy (for SecurityToken auth it is read from the session profile and can be left null)."
+  default     = null
 }
 
 variable "user_ocid" {
   type        = string
-  description = "The OCID of the user to use for authentication"
-  nullable    = false
+  description = "The OCID of the user to use for authentication (required only for ApiKey auth)."
+  default     = null
 }
 
 variable "region" {

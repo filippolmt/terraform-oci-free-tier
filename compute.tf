@@ -81,5 +81,18 @@ resource "oci_core_instance" "instance" {
       is_pv_encryption_in_transit_enabled,
       create_vnic_details[0].assign_public_ip,
     ]
+
+    # Fail fast at plan time when ApiKey auth is selected but the required
+    # credential fields are missing, instead of a cryptic 401-NotAuthenticated
+    # at apply. SecurityToken/InstancePrincipal/ResourcePrincipal read these
+    # from the session profile or instance metadata, so they may stay null.
+    precondition {
+      condition = var.auth_method != "ApiKey" || (
+        var.tenancy_ocid != null &&
+        var.user_ocid != null &&
+        var.oracle_api_key_fingerprint != null
+      )
+      error_message = "auth_method = \"ApiKey\" requires tenancy_ocid, user_ocid and oracle_api_key_fingerprint to be set."
+    }
   }
 }

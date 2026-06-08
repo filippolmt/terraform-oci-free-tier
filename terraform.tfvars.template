@@ -1,6 +1,21 @@
 # Copy this file to terraform.tfvars and fill in the values.
 # All values are available in the OCI Console: https://cloud.oracle.com
 
+# --- Authentication method ----------------------------------------------------
+# Choose how the OCI provider authenticates. Default is "ApiKey".
+#
+#   ApiKey        → use an uploaded API signing key (fill the API key fields below).
+#   SecurityToken → use a CLI session token created by `oci session authenticate`
+#                   (browser login). With this method the API key fields
+#                   (oracle_api_key_fingerprint, user_ocid, tenancy_ocid,
+#                   oracle_api_private_key_path) can be left empty — they are read
+#                   from the session profile in ~/.oci/config.
+#
+# auth_method         = "ApiKey"
+# config_file_profile = "DEFAULT"   # profile in ~/.oci/config (the one created by `oci session authenticate`)
+
+# --- API key fields (required only for auth_method = "ApiKey") -----------------
+
 # API key fingerprint — OCI Console → Profile → API Keys → Fingerprint column
 # Format: aa:bb:cc:dd:...
 oracle_api_key_fingerprint = ""

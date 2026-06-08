@@ -11,6 +11,7 @@ This repository provides OpenTofu/Terraform configurations for deploying resourc
   - [Changelog](#changelog)
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
+  - [Authentication](#authentication)
   - [Usage](#usage)
   - [Files](#files)
   - [Security Configuration](#security-configuration)
@@ -57,6 +58,44 @@ See [CHANGELOG.md](CHANGELOG.md) for version history, breaking changes, and migr
     ```bash
     tofu init
     ```
+
+## Authentication
+
+The module supports two OCI provider authentication methods, selected via the `auth_method`
+variable (default: `"ApiKey"`).
+
+### API key (default)
+
+Upload an API signing key in the OCI Console and set the matching variables in `terraform.tfvars`:
+
+```hcl
+auth_method                 = "ApiKey" # default, can be omitted
+oracle_api_key_fingerprint  = "aa:bb:cc:..."
+user_ocid                   = "ocid1.user.oc1..aaaa..."
+tenancy_ocid                = "ocid1.tenancy.oc1..aaaa..."
+oracle_api_private_key_path = "~/.oci/oci_api_key.pem" # default
+```
+
+### Session token (browser login)
+
+If you authenticate through the OCI CLI with a browser-based session token, no API key upload is
+needed:
+
+```bash
+oci session authenticate   # creates a session-token profile in ~/.oci/config
+```
+
+Then set only the auth method and the profile name — the API key fields
+(`oracle_api_key_fingerprint`, `user_ocid`, `tenancy_ocid`, `oracle_api_private_key_path`) can be
+left empty, as they are read from the session profile:
+
+```hcl
+auth_method         = "SecurityToken"
+config_file_profile = "<your-session-profile>" # the profile created by `oci session authenticate`
+```
+
+> The provider also accepts `InstancePrincipal`, `InstancePrincipalWithCerts`, and
+> `ResourcePrincipal` as `auth_method` values for in-cloud execution.
 
 ## Usage
 

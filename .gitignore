@@ -40,3 +40,7 @@ oracle
 
 # GSD planning artifacts (local only)
 .planning/
+
+.toolbox.yaml
+openspec*
+opsx*

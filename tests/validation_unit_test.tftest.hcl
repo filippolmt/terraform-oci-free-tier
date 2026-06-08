@@ -272,3 +272,42 @@ run "valid_boundary_min_values" {
     error_message = "1GB RAM (minimum) should be valid"
   }
 }
+
+# --- Authentication method validation ---
+
+run "invalid_auth_method" {
+  command = plan
+  variables {
+    auth_method = "Bogus"
+  }
+
+  expect_failures = [var.auth_method]
+}
+
+run "valid_security_token_auth" {
+  command = plan
+  variables {
+    auth_method                = "SecurityToken"
+    config_file_profile        = "my-session-profile"
+    tenancy_ocid               = null
+    user_ocid                  = null
+    oracle_api_key_fingerprint = null
+  }
+
+  assert {
+    condition     = oci_core_instance.instance.compartment_id == "ocid1.compartment.oc1..mock"
+    error_message = "SecurityToken auth should plan successfully without API key fields"
+  }
+}
+
+run "apikey_missing_credentials" {
+  command = plan
+  variables {
+    auth_method                = "ApiKey"
+    tenancy_ocid               = null
+    user_ocid                  = null
+    oracle_api_key_fingerprint = null
+  }
+
+  expect_failures = [oci_core_instance.instance]
+}

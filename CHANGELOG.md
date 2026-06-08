@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] - 2026-06-08
+
+### Added
+
+- **Configurable provider authentication** (#161): new `auth_method` variable (default `"ApiKey"`, validated against `ApiKey`, `SecurityToken`, `InstancePrincipal`, `InstancePrincipalWithCerts`, `ResourcePrincipal`) and `config_file_profile` variable (default `"DEFAULT"`), wired into the `provider "oci"` block. Enables CLI session-token auth (`oci session authenticate`) in addition to API key auth.
+- **`Authentication` section** in `README.md` and an auth block in `terraform.tfvars.template` documenting both the API key and session-token flows.
+- **Fast-fail precondition** on the compute instance: when `auth_method = "ApiKey"` but `tenancy_ocid` / `user_ocid` / `oracle_api_key_fingerprint` are missing, `plan` fails with a clear message instead of a cryptic `401-NotAuthenticated` at apply.
+- **Tests** for `auth_method` validation, SecurityToken planning without API key fields, and the ApiKey missing-credentials precondition.
+
+### Changed
+
+- **`user_ocid`, `tenancy_ocid`, `oracle_api_key_fingerprint`** are now optional (`default = null`, `nullable` removed) since they are not required for SecurityToken / principal-based auth. Backward compatible — existing API-key callers keep passing them.
+
+### Fixed
+
+- **Spurious instance replacement on import/refresh** — `is_pv_encryption_in_transit_enabled` and the launch-only `create_vnic_details[0].assign_public_ip` are now in `ignore_changes`, so importing an existing instance no longer forces a replacement.
+
 ## [4.1.0] - 2026-02-17
 
 ### Added

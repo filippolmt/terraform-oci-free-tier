@@ -71,15 +71,8 @@ resource "oci_core_instance" "instance" {
   }
 
   lifecycle {
-    # OCI does not return is_pv_encryption_in_transit_enabled on GetInstance
-    # (it is only reflected under launch_options), so on import/refresh it
-    # reads back as null and would otherwise force a spurious replacement.
-    # assign_public_ip is a launch-only attribute: existing instances may have
-    # been created with an ephemeral public IP, so ignore it to keep imports clean.
     ignore_changes = [
       metadata["user_data"],
-      is_pv_encryption_in_transit_enabled,
-      create_vnic_details[0].assign_public_ip,
     ]
 
     # Fail fast at plan time when ApiKey auth is selected but the required

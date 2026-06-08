@@ -71,6 +71,9 @@ resource "oci_core_instance" "instance" {
   }
 
   lifecycle {
-    ignore_changes = [metadata["user_data"]]
+    # OCI does not return is_pv_encryption_in_transit_enabled on GetInstance
+    # (it is only reflected under launch_options), so on import/refresh it
+    # reads back as null and would otherwise force a spurious replacement.
+    ignore_changes = [metadata["user_data"], is_pv_encryption_in_transit_enabled]
   }
 }

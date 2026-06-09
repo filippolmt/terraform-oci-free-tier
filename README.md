@@ -224,14 +224,14 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 ## Requirements
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >=1.3 |
 | <a name="requirement_oci"></a> [oci](#requirement\_oci) | 8.17.0 |
 
 ## Providers
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="provider_oci"></a> [oci](#provider\_oci) | 8.17.0 |
 
 ## Modules
@@ -241,7 +241,7 @@ No modules.
 ## Resources
 
 | Name | Type |
-| ---- | ---- |
+|------|------|
 | [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/8.17.0/docs/resources/core_default_route_table) | resource |
 | [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/8.17.0/docs/resources/core_instance) | resource |
 | [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/8.17.0/docs/resources/core_internet_gateway) | resource |
@@ -259,7 +259,7 @@ No modules.
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
+|------|-------------|------|---------|:--------:|
 | <a name="input_additional_ssh_public_key"></a> [additional\_ssh\_public\_key](#input\_additional\_ssh\_public\_key) | Additional SSH public key to add to authorized\_keys (optional) | `string` | `""` | no |
 | <a name="input_auth_method"></a> [auth\_method](#input\_auth\_method) | OCI provider authentication method. Use "ApiKey" for API key auth or "SecurityToken" for CLI session-token auth (oci session authenticate). | `string` | `"ApiKey"` | no |
 | <a name="input_auto_reboot_time"></a> [auto\_reboot\_time](#input\_auto\_reboot\_time) | Time of day (HH:MM, 24-hour) for the unattended-upgrades automatic reboot. Only used when enable\_auto\_reboot=true. | `string` | `"03:30"` | no |
@@ -303,7 +303,7 @@ No modules.
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_availability_domain"></a> [availability\_domain](#output\_availability\_domain) | The availability domain where resources are deployed |
 | <a name="output_docker_volume_id"></a> [docker\_volume\_id](#output\_docker\_volume\_id) | The OCID of the Docker volume |
 | <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The OCID of the instance |

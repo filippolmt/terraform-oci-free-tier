@@ -351,8 +351,13 @@ fi
 # nothing unexpected keeps listening on 0.0.0.0 once the host filter is relaxed.
 # Non-fatal when a unit is not installed.
 log "Disabling unused locally-listening services (cups, cups-browsed, rpcbind)"
-systemctl disable --now cups cups-browsed rpcbind 2>/dev/null ||
-  log "One or more of cups/cups-browsed/rpcbind not installed, skipping"
+for svc in cups cups-browsed rpcbind; do
+  if systemctl disable --now "$svc" 2>/dev/null; then
+    log "Disabled $svc"
+  else
+    log "$svc not present or already disabled, skipping"
+  fi
+done
 
 # Install Runtipi
 if [ "${INSTALL_RUNTIPI}" = "true" ]; then

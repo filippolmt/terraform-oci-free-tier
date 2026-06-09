@@ -314,6 +314,51 @@ EOF
   log "Docker configured to wait for $MNT_DIR mount on boot"
 fi
 
+# Reconcile the host packet filter with the OCI security list.
+# The Oracle Ubuntu image ships an INPUT chain ending in a catch-all REJECT,
+# so only SSH is reachable and ports opened in network.tf are dropped at the
+# host. The OCI security list is the single source of truth for inbound
+# reachability, so remove only that catch-all REJECT (IPv4 + IPv6), leaving
+# RELATED,ESTABLISHED, lo, icmp, and SSH rules intact. Guarded/non-fatal.
+log "Reconciling host packet filter with OCI security list"
+if iptables -C INPUT -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
+  iptables -D INPUT -j REJECT --reject-with icmp-host-prohibited
+  log "Removed IPv4 catch-all REJECT rule from INPUT chain"
+else
+  log "IPv4 catch-all REJECT rule not present, nothing to remove"
+fi
+
+if ip6tables -C INPUT -j REJECT --reject-with icmp6-adm-prohibited 2>/dev/null; then
+  ip6tables -D INPUT -j REJECT --reject-with icmp6-adm-prohibited
+  log "Removed IPv6 catch-all REJECT rule from INPUT chain"
+else
+  log "IPv6 catch-all REJECT rule not present, nothing to remove"
+fi
+
+# Persist the ruleset so it survives reboot (iptables-persistent ships on the
+# Oracle image). Guard against a future base image lacking the tool.
+if command -v netfilter-persistent >/dev/null 2>&1; then
+  if netfilter-persistent save; then
+    log "Persisted netfilter ruleset"
+  else
+    log_error "netfilter-persistent save failed; firewall change may not persist across reboot"
+  fi
+else
+  log_error "netfilter-persistent not found; firewall change will not persist across reboot"
+fi
+
+# Disable network-exposed services with no role on a headless cloud server so
+# nothing unexpected keeps listening on 0.0.0.0 once the host filter is relaxed.
+# Non-fatal when a unit is not installed.
+log "Disabling unused locally-listening services (cups, cups-browsed, rpcbind)"
+for svc in cups cups-browsed rpcbind; do
+  if systemctl disable --now "$svc" 2>/dev/null; then
+    log "Disabled $svc"
+  else
+    log "$svc not present or already disabled, skipping"
+  fi
+done
+
 # Install Runtipi
 if [ "${INSTALL_RUNTIPI}" = "true" ]; then
   log "Install Runtipi"

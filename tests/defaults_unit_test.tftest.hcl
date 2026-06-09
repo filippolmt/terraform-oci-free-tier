@@ -100,6 +100,49 @@ run "default_network_config" {
   }
 }
 
+run "os_tuning_defaults_disabled" {
+  command = plan
+
+  # OS-tuning behavior-changing options default to off, preserving prior behavior.
+  assert {
+    condition     = var.swap_size_gb == 0
+    error_message = "Swap should be disabled by default (swap_size_gb = 0)"
+  }
+
+  assert {
+    condition     = var.enable_auto_reboot == false
+    error_message = "Automatic reboot should be disabled by default"
+  }
+
+  assert {
+    condition     = var.docker_data_root_on_block_volume == false
+    error_message = "Docker data-root migration should be disabled by default"
+  }
+
+  assert {
+    condition     = var.enable_fail2ban == false
+    error_message = "fail2ban should be disabled by default"
+  }
+}
+
+run "os_tuning_valid_overrides_plan" {
+  command = plan
+
+  variables {
+    swap_size_gb                     = 4
+    enable_auto_reboot               = true
+    auto_reboot_time                 = "04:15"
+    docker_data_root_on_block_volume = true
+    enable_fail2ban                  = true
+  }
+
+  # Non-default-but-valid OS-tuning values must wire into user_data and plan cleanly.
+  assert {
+    condition     = oci_core_instance.instance.display_name == "DockerHost"
+    error_message = "Instance should plan successfully with OS-tuning options enabled"
+  }
+}
+
 run "default_tags" {
   command = plan
 

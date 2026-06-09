@@ -425,3 +425,43 @@ variable "wireguard_client_configuration" {
     error_message = "WireGuard configuration must start with [Interface] section or be empty."
   }
 }
+
+variable "swap_size_gb" {
+  type        = number
+  description = "Size in GB of an optional swapfile created on the boot disk (/swapfile). 0 disables swap (default). When > 0, vm.swappiness=10 is also applied."
+  default     = 0
+
+  validation {
+    condition     = var.swap_size_gb >= 0
+    error_message = "swap_size_gb must be >= 0 (0 disables swap)."
+  }
+}
+
+variable "enable_auto_reboot" {
+  type        = bool
+  description = "Enable automatic reboot via unattended-upgrades so kernel security updates take effect. Reboot occurs at auto_reboot_time. Default false (preserves current behavior)."
+  default     = false
+}
+
+variable "auto_reboot_time" {
+  type        = string
+  description = "Time of day (HH:MM, 24-hour) for the unattended-upgrades automatic reboot. Only used when enable_auto_reboot=true."
+  default     = "03:30"
+
+  validation {
+    condition     = can(regex("^([01][0-9]|2[0-3]):[0-5][0-9]$", var.auto_reboot_time))
+    error_message = "auto_reboot_time must be HH:MM in 24-hour format (e.g. 03:30)."
+  }
+}
+
+variable "docker_data_root_on_block_volume" {
+  type        = bool
+  description = "Move Docker's data-root to the block volume (/mnt/data/docker) via a one-time guarded copy-then-switch migration. Merges into any existing /etc/docker/daemon.json, preserving log-driver/log-opts and default-address-pools. Default false."
+  default     = false
+}
+
+variable "enable_fail2ban" {
+  type        = bool
+  description = "Install and enable fail2ban (Phase A, non-fatal). Low value with key-only SSH but reduces auth-log noise. Default false (preserves current behavior)."
+  default     = false
+}

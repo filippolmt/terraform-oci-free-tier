@@ -172,6 +172,32 @@ run "invalid_wireguard_config" {
   expect_failures = [var.wireguard_client_configuration]
 }
 
+# --- OS tuning variable validation ---
+
+run "invalid_swap_size_negative" {
+  command = plan
+  variables {
+    swap_size_gb = -1
+  }
+  expect_failures = [var.swap_size_gb]
+}
+
+run "invalid_auto_reboot_time_out_of_range" {
+  command = plan
+  variables {
+    auto_reboot_time = "25:00"
+  }
+  expect_failures = [var.auto_reboot_time]
+}
+
+run "invalid_auto_reboot_time_format" {
+  command = plan
+  variables {
+    auto_reboot_time = "3:5"
+  }
+  expect_failures = [var.auto_reboot_time]
+}
+
 # --- Custom ingress rules validation ---
 
 run "custom_rule_invalid_protocol" {

@@ -63,6 +63,11 @@ resource "oci_core_instance" "instance" {
       RUNTIPI_MAIN_NETWORK_SUBNET    = var.runtipi_main_network_subnet,
       RUNTIPI_ADGUARD_IP             = var.runtipi_adguard_ip,
       WIREGUARD_CLIENT_CONFIGURATION = var.wireguard_client_configuration,
+      SWAP_SIZE_GB                   = var.swap_size_gb,
+      ENABLE_AUTO_REBOOT             = var.enable_auto_reboot,
+      AUTO_REBOOT_TIME               = var.auto_reboot_time,
+      DOCKER_DATA_ROOT_ON_VOLUME     = var.docker_data_root_on_block_volume,
+      ENABLE_FAIL2BAN                = var.enable_fail2ban,
     }))
   }
 

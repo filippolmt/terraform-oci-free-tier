@@ -224,14 +224,14 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 ## Requirements
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >=1.3 |
 | <a name="requirement_oci"></a> [oci](#requirement\_oci) | 8.17.0 |
 
 ## Providers
 
 | Name | Version |
-| ---- | ------- |
+|------|---------|
 | <a name="provider_oci"></a> [oci](#provider\_oci) | 8.17.0 |
 
 ## Modules
@@ -241,7 +241,7 @@ No modules.
 ## Resources
 
 | Name | Type |
-| ---- | ---- |
+|------|------|
 | [oci_core_default_route_table.default_route_table](https://registry.terraform.io/providers/oracle/oci/8.17.0/docs/resources/core_default_route_table) | resource |
 | [oci_core_instance.instance](https://registry.terraform.io/providers/oracle/oci/8.17.0/docs/resources/core_instance) | resource |
 | [oci_core_internet_gateway.internet_gateway](https://registry.terraform.io/providers/oracle/oci/8.17.0/docs/resources/core_internet_gateway) | resource |
@@ -259,15 +259,19 @@ No modules.
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-| ---- | ----------- | ---- | ------- | :------: |
+|------|-------------|------|---------|:--------:|
 | <a name="input_additional_ssh_public_key"></a> [additional\_ssh\_public\_key](#input\_additional\_ssh\_public\_key) | Additional SSH public key to add to authorized\_keys (optional) | `string` | `""` | no |
 | <a name="input_auth_method"></a> [auth\_method](#input\_auth\_method) | OCI provider authentication method. Use "ApiKey" for API key auth or "SecurityToken" for CLI session-token auth (oci session authenticate). | `string` | `"ApiKey"` | no |
+| <a name="input_auto_reboot_time"></a> [auto\_reboot\_time](#input\_auto\_reboot\_time) | Time of day (HH:MM, 24-hour) for the unattended-upgrades automatic reboot. Only used when enable\_auto\_reboot=true. | `string` | `"03:30"` | no |
 | <a name="input_availability_domain_number"></a> [availability\_domain\_number](#input\_availability\_domain\_number) | The availability domain number (1-3 depending on region) | `number` | `1` | no |
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | The OCID of the compartment | `string` | n/a | yes |
 | <a name="input_config_file_profile"></a> [config\_file\_profile](#input\_config\_file\_profile) | Profile in ~/.oci/config to use. Relevant for SecurityToken auth (the session-token profile created by `oci session authenticate`). | `string` | `"DEFAULT"` | no |
 | <a name="input_custom_ingress_security_rules"></a> [custom\_ingress\_security\_rules](#input\_custom\_ingress\_security\_rules) | Additional custom ingress rules. SSH (22/TCP) and ICMP fragmentation are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when install\_runtipi=true. Ping is controlled by enable\_ping. | <pre>list(object({<br/>    description = optional(string, "Custom rule")<br/>    protocol    = string # "6" (TCP) or "17" (UDP)<br/>    source      = optional(string, "0.0.0.0/0")<br/>    port_min    = number<br/>    port_max    = number<br/>  }))</pre> | `[]` | no |
+| <a name="input_docker_data_root_on_block_volume"></a> [docker\_data\_root\_on\_block\_volume](#input\_docker\_data\_root\_on\_block\_volume) | Move Docker's data-root to the block volume (/mnt/data/docker) via a one-time guarded copy-then-switch migration. Merges into any existing /etc/docker/daemon.json, preserving log-driver/log-opts and default-address-pools. Default false. | `bool` | `false` | no |
 | <a name="input_docker_volume_size_gb"></a> [docker\_volume\_size\_gb](#input\_docker\_volume\_size\_gb) | The size of the secondary block volume in GBs (mounted at /mnt/data for Docker data) | `number` | `150` | no |
 | <a name="input_egress_security_rules"></a> [egress\_security\_rules](#input\_egress\_security\_rules) | List of egress (outbound) security rules. Only used when enable\_unrestricted\_egress=false. Default allows HTTP, HTTPS, DNS, and NTP. | <pre>list(object({<br/>    description      = string<br/>    protocol         = string<br/>    destination      = string<br/>    destination_type = string<br/>    stateless        = bool<br/>    tcp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    udp_options = optional(object({<br/>      min = number<br/>      max = number<br/>    }))<br/>    icmp_options = optional(object({<br/>      type = number<br/>      code = number<br/>    }))<br/>  }))</pre> | <pre>[<br/>  {<br/>    "description": "Allow HTTPS outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 443,<br/>      "min": 443<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow HTTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 80,<br/>      "min": 80<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (UDP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow DNS outbound (TCP)",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "6",<br/>    "stateless": false,<br/>    "tcp_options": {<br/>      "max": 53,<br/>      "min": 53<br/>    }<br/>  },<br/>  {<br/>    "description": "Allow NTP outbound",<br/>    "destination": "0.0.0.0/0",<br/>    "destination_type": "CIDR_BLOCK",<br/>    "protocol": "17",<br/>    "stateless": false,<br/>    "udp_options": {<br/>      "max": 123,<br/>      "min": 123<br/>    }<br/>  }<br/>]</pre> | no |
+| <a name="input_enable_auto_reboot"></a> [enable\_auto\_reboot](#input\_enable\_auto\_reboot) | Enable automatic reboot via unattended-upgrades so kernel security updates take effect. Reboot occurs at auto\_reboot\_time. Default false (preserves current behavior). | `bool` | `false` | no |
+| <a name="input_enable_fail2ban"></a> [enable\_fail2ban](#input\_enable\_fail2ban) | Install and enable fail2ban (Phase A, non-fatal). Low value with key-only SSH but reduces auth-log noise. Default false (preserves current behavior). | `bool` | `false` | no |
 | <a name="input_enable_ping"></a> [enable\_ping](#input\_enable\_ping) | Whether to allow ICMP echo requests (ping) from anywhere | `bool` | `false` | no |
 | <a name="input_enable_unrestricted_egress"></a> [enable\_unrestricted\_egress](#input\_enable\_unrestricted\_egress) | Allow all outbound traffic (all protocols, all ports, 0.0.0.0/0). When false, only egress\_security\_rules are applied. NOTE: if using WireGuard with restrictive egress, add a UDP rule for your WireGuard server endpoint port to egress\_security\_rules. | `bool` | `true` | no |
 | <a name="input_fault_domain"></a> [fault\_domain](#input\_fault\_domain) | The fault domain for the instance (FAULT-DOMAIN-1, FAULT-DOMAIN-2, or FAULT-DOMAIN-3) | `string` | `"FAULT-DOMAIN-2"` | no |
@@ -289,6 +293,7 @@ No modules.
 | <a name="input_ssh_public_key"></a> [ssh\_public\_key](#input\_ssh\_public\_key) | The public key to use for SSH access | `string` | n/a | yes |
 | <a name="input_ssh_source_cidr"></a> [ssh\_source\_cidr](#input\_ssh\_source\_cidr) | Source CIDR allowed for SSH access (default: 0.0.0.0/0 — all IPs) | `string` | `"0.0.0.0/0"` | no |
 | <a name="input_subnet_cidr_block"></a> [subnet\_cidr\_block](#input\_subnet\_cidr\_block) | The CIDR block for the subnet (must be within vcn\_cidr\_block; OCI will reject it at apply time otherwise) | `string` | `"10.1.0.0/24"` | no |
+| <a name="input_swap_size_gb"></a> [swap\_size\_gb](#input\_swap\_size\_gb) | Size in GB of an optional swapfile created on the boot disk (/swapfile). 0 disables swap (default). When > 0, vm.swappiness=10 is also applied. | `number` | `0` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | The OCID of the tenancy (for SecurityToken auth it is read from the session profile and can be left null). | `string` | `null` | no |
 | <a name="input_timezone"></a> [timezone](#input\_timezone) | IANA timezone for the instance (e.g. Europe/Rome, America/New\_York, UTC) | `string` | `"Europe/Rome"` | no |
 | <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | The OCID of the user to use for authentication (required only for ApiKey auth). | `string` | `null` | no |
@@ -298,7 +303,7 @@ No modules.
 ## Outputs
 
 | Name | Description |
-| ---- | ----------- |
+|------|-------------|
 | <a name="output_availability_domain"></a> [availability\_domain](#output\_availability\_domain) | The availability domain where resources are deployed |
 | <a name="output_docker_volume_id"></a> [docker\_volume\_id](#output\_docker\_volume\_id) | The OCID of the Docker volume |
 | <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The OCID of the instance |

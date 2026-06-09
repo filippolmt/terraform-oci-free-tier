@@ -41,10 +41,17 @@ fi
 # Prevent interactive prompts from apt during cloud-init
 export DEBIAN_FRONTEND=noninteractive
 
-# Set timezone
-ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
-echo "${TIMEZONE}" >/etc/timezone
-log "Timezone set to ${TIMEZONE}"
+# Set timezone.
+# timedatectl reconciles /etc/localtime, /etc/timezone and the running clock via
+# systemd-timedated; the bare symlink alone left the instance on UTC at cloud-init
+# time. Fall back to the symlink only if timedatectl is unavailable.
+if timedatectl set-timezone "${TIMEZONE}"; then
+  log "Timezone set to ${TIMEZONE} via timedatectl"
+else
+  ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
+  echo "${TIMEZONE}" >/etc/timezone
+  log "timedatectl unavailable; timezone set to ${TIMEZONE} via symlink fallback"
+fi
 
 # Get the non-root user
 USER_NAME="ubuntu"
@@ -121,6 +128,114 @@ if [ -n "${ADDITIONAL_SSH_PUB_KEY}" ]; then
   grep -qxF -- "${ADDITIONAL_SSH_PUB_KEY}" "$AUTHORIZED_KEYS_FILE" || cat >>"$AUTHORIZED_KEYS_FILE" <<'SSH_KEY'
 ${ADDITIONAL_SSH_PUB_KEY}
 SSH_KEY
+fi
+
+# =============================================================================
+# OS tuning and hardening
+#
+# Idempotent: drop-in files are overwritten in place, fstab/swap entries are
+# guarded against duplicates. Bug fixes (timezone above) apply unconditionally;
+# behavior-changing items (swap, auto-reboot, fail2ban, Docker data-root) are
+# gated on their Terraform variables and default to off.
+# =============================================================================
+log "=== Applying OS tuning and hardening ==="
+
+# --- journald disk usage cap (#165.2) ---
+JOURNALD_DROPIN="/etc/systemd/journald.conf.d/00-oci-free-tier.conf"
+mkdir -p "$(dirname "$JOURNALD_DROPIN")"
+cat >"$JOURNALD_DROPIN" <<'JOURNALD_CONF'
+[Journal]
+SystemMaxUse=200M
+Storage=persistent
+JOURNALD_CONF
+if systemctl restart systemd-journald; then
+  log "journald capped at SystemMaxUse=200M (persistent storage)"
+else
+  log_error "Failed to restart systemd-journald (drop-in written, applies on next boot)"
+fi
+
+# --- SSH hardening (#165.4): disable root login and X11 forwarding ---
+# Key-only auth is left untouched; login remains via the ubuntu user + sudo.
+SSHD_DROPIN="/etc/ssh/sshd_config.d/00-oci-free-tier-hardening.conf"
+mkdir -p "$(dirname "$SSHD_DROPIN")"
+cat >"$SSHD_DROPIN" <<'SSHD_CONF'
+PermitRootLogin no
+X11Forwarding no
+SSHD_CONF
+if sshd -t; then
+  systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+  log "SSH hardening applied (PermitRootLogin no, X11Forwarding no)"
+else
+  log_error "sshd -t validation failed; removing hardening drop-in to avoid breaking SSH"
+  rm -f "$SSHD_DROPIN"
+fi
+
+# --- Resource limits for container workloads (#165.5) ---
+LIMITS_DROPIN="/etc/security/limits.d/00-oci-free-tier.conf"
+mkdir -p "$(dirname "$LIMITS_DROPIN")"
+cat >"$LIMITS_DROPIN" <<'LIMITS_CONF'
+* soft nofile 65535
+* hard nofile 65535
+root soft nofile 65535
+root hard nofile 65535
+LIMITS_CONF
+log "Open-file limit (nofile) set to 65535"
+
+cat >/etc/sysctl.d/99-oci-free-tier.conf <<'SYSCTL_CONF'
+fs.inotify.max_user_instances=512
+fs.inotify.max_user_watches=524288
+SYSCTL_CONF
+log "inotify limits drop-in written (max_user_instances=512, max_user_watches=524288)"
+
+# --- Optional swap file (#164.3) + vm.swappiness (#165.6) ---
+if [ "${SWAP_SIZE_GB}" -gt 0 ]; then
+  SWAPFILE="/swapfile"
+  if [ -f "$SWAPFILE" ] || swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$SWAPFILE"; then
+    log "Swapfile $SWAPFILE already present, skipping creation"
+  else
+    log "Creating ${SWAP_SIZE_GB}G swapfile at $SWAPFILE"
+    if ! fallocate -l "${SWAP_SIZE_GB}G" "$SWAPFILE" 2>/dev/null; then
+      dd if=/dev/zero of="$SWAPFILE" bs=1G count="${SWAP_SIZE_GB}" status=none
+    fi
+    chmod 600 "$SWAPFILE"
+    mkswap "$SWAPFILE"
+    swapon "$SWAPFILE"
+    log "Swapfile active (${SWAP_SIZE_GB}G)"
+  fi
+  # Persist in fstab without duplicating the entry on re-run
+  if ! grep -qF "$SWAPFILE" /etc/fstab; then
+    echo "$SWAPFILE none swap sw 0 0" >>/etc/fstab
+    log "Added swapfile entry to /etc/fstab"
+  fi
+  # vm.swappiness is only meaningful with swap enabled
+  echo "vm.swappiness=10" >/etc/sysctl.d/99-oci-free-tier-swap.conf
+  log "vm.swappiness=10 drop-in written"
+fi
+
+# Apply all sysctl drop-ins
+if sysctl --system >/dev/null 2>&1; then
+  log "Applied sysctl drop-ins"
+else
+  log_error "sysctl --system reported errors (drop-ins written, apply on next boot)"
+fi
+
+# --- Optional automatic reboot for unattended-upgrades (#165.3) ---
+if [ "${ENABLE_AUTO_REBOOT}" = "true" ]; then
+  cat >/etc/apt/apt.conf.d/52-oci-free-tier-auto-reboot <<'AUTO_REBOOT_CONF'
+Unattended-Upgrade::Automatic-Reboot "true";
+Unattended-Upgrade::Automatic-Reboot-Time "${AUTO_REBOOT_TIME}";
+AUTO_REBOOT_CONF
+  log "Unattended-upgrades automatic reboot enabled at ${AUTO_REBOOT_TIME}"
+fi
+
+# --- Optional fail2ban (#165.6) ---
+if [ "${ENABLE_FAIL2BAN}" = "true" ]; then
+  log "Installing fail2ban (non-fatal)"
+  if retry 3 10 apt-get -o DPkg::Lock::Timeout=60 install -y fail2ban; then
+    systemctl enable --now fail2ban 2>/dev/null || log_error "fail2ban installed but service failed to start"
+  else
+    log_error "fail2ban installation failed (non-fatal), continuing"
+  fi
 fi
 
 # =============================================================================
@@ -358,6 +473,65 @@ for svc in cups cups-browsed rpcbind; do
     log "$svc not present or already disabled, skipping"
   fi
 done
+
+# --- Optional: move Docker data-root to the block volume (#165.6) ---
+# One-time, marker-guarded copy-then-switch migration. Runs in Phase B because
+# it needs /mnt/data mounted. MERGES "data-root" into any existing
+# /etc/docker/daemon.json so log-driver/log-opts and default-address-pools are
+# preserved (never overwritten). The source /var/lib/docker is kept (renamed)
+# until the new root is verified live.
+if [ "${DOCKER_DATA_ROOT_ON_VOLUME}" = "true" ]; then
+  DOCKER_MIGRATION_MARKER="/var/log/.docker_dataroot_migrated"
+  NEW_DOCKER_ROOT="$MNT_DIR/docker"
+
+  if [ -f "$DOCKER_MIGRATION_MARKER" ]; then
+    log "Docker data-root already migrated to $NEW_DOCKER_ROOT, skipping"
+  else
+    log "Migrating Docker data-root to $NEW_DOCKER_ROOT"
+    DAEMON_JSON="/etc/docker/daemon.json"
+    mkdir -p /etc/docker "$NEW_DOCKER_ROOT"
+
+    # Merge data-root into daemon.json, preserving existing keys (needs jq)
+    if command -v jq >/dev/null 2>&1 || retry 3 10 apt-get -o DPkg::Lock::Timeout=60 install -y jq; then
+      if [ -s "$DAEMON_JSON" ]; then
+        TMP_JSON="$(mktemp)"
+        if jq --arg root "$NEW_DOCKER_ROOT" '. + {"data-root": $root}' "$DAEMON_JSON" >"$TMP_JSON"; then
+          mv "$TMP_JSON" "$DAEMON_JSON"
+        else
+          rm -f "$TMP_JSON"
+          log_error "Failed to merge $DAEMON_JSON; aborting Docker migration (data left in place)"
+        fi
+      else
+        echo "{\"data-root\": \"$NEW_DOCKER_ROOT\"}" >"$DAEMON_JSON"
+      fi
+    else
+      log_error "jq unavailable; aborting Docker migration to avoid clobbering $DAEMON_JSON"
+    fi
+
+    # Proceed only if daemon.json now references the new root (source of truth)
+    if grep -qF "$NEW_DOCKER_ROOT" "$DAEMON_JSON" 2>/dev/null; then
+      log "Stopping Docker for data-root migration"
+      systemctl stop docker docker.socket 2>/dev/null || true
+      # Copy-then-switch: preserve attributes, keep source until verified
+      if [ -d /var/lib/docker ] && [ -n "$(ls -A /var/lib/docker 2>/dev/null || true)" ]; then
+        log "Copying /var/lib/docker -> $NEW_DOCKER_ROOT"
+        cp -a /var/lib/docker/. "$NEW_DOCKER_ROOT/"
+      fi
+      if systemctl start docker; then
+        sleep 3
+        if docker info --format '{{.DockerRootDir}}' 2>/dev/null | grep -qF "$NEW_DOCKER_ROOT"; then
+          log "Docker now using data-root $NEW_DOCKER_ROOT"
+          mv /var/lib/docker "/var/lib/docker.migrated" 2>/dev/null || true
+          touch "$DOCKER_MIGRATION_MARKER"
+        else
+          log_error "Docker did not pick up new data-root; source kept at /var/lib/docker for review"
+        fi
+      else
+        log_error "Docker failed to start after migration; check $DAEMON_JSON and journalctl -u docker"
+      fi
+    fi
+  fi
+fi
 
 # Install Runtipi
 if [ "${INSTALL_RUNTIPI}" = "true" ]; then

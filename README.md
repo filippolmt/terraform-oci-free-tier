@@ -308,14 +308,15 @@ No modules.
 | [oci_core_volume_backup_policy_assignment.docker_volume_backup_policy_assignment](https://registry.terraform.io/providers/oracle/oci/8.29.0/docs/resources/core_volume_backup_policy_assignment) | resource |
 | [oci_core_private_ips.instance_private_ip](https://registry.terraform.io/providers/oracle/oci/8.29.0/docs/data-sources/core_private_ips) | data source |
 | [oci_identity_availability_domain.ad](https://registry.terraform.io/providers/oracle/oci/8.29.0/docs/data-sources/identity_availability_domain) | data source |
+| [oci_identity_region_subscriptions.tenancy](https://registry.terraform.io/providers/oracle/oci/8.29.0/docs/data-sources/identity_region_subscriptions) | data source |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
+| <a name="input_acknowledge_billable_resources"></a> [acknowledge\_billable\_resources](#input\_acknowledge\_billable\_resources) | Acknowledge that the configuration provisions resources outside the Always Free allocation. Unlocks three things: compute above 2 OCPUs / 12 GB, more than 200 GB of total block storage, and a region other than the tenancy home region. On a Pay-As-You-Go account these are billed; on a Free Tier account they are refused by OCI. | `bool` | `false` | no |
 | <a name="input_additional_ssh_public_key"></a> [additional\_ssh\_public\_key](#input\_additional\_ssh\_public\_key) | Additional SSH public key to add to authorized\_keys (optional) | `string` | `""` | no |
 | <a name="input_auth_method"></a> [auth\_method](#input\_auth\_method) | OCI provider authentication method. Use "ApiKey" for API key auth or "SecurityToken" for CLI session-token auth (oci session authenticate). | `string` | `"ApiKey"` | no |
-| <a name="input_acknowledge_billable_resources"></a> [acknowledge\_billable\_resources](#input\_acknowledge\_billable\_resources) | Acknowledge that the configuration provisions resources outside the Always Free allocation. Unlocks three things: compute above 2 OCPUs / 12 GB, more than 200 GB of total block storage, and a region other than the tenancy home region. On a Pay-As-You-Go account these are billed; on a Free Tier account they are refused by OCI. | `bool` | `false` | no |
 | <a name="input_auto_reboot_time"></a> [auto\_reboot\_time](#input\_auto\_reboot\_time) | Time of day (HH:MM, 24-hour) for the unattended-upgrades automatic reboot. Only used when enable\_auto\_reboot=true. | `string` | `"03:30"` | no |
 | <a name="input_availability_domain_number"></a> [availability\_domain\_number](#input\_availability\_domain\_number) | The availability domain number (1-3 depending on region) | `number` | `1` | no |
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | The OCID of the compartment | `string` | n/a | yes |

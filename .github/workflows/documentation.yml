@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "*.tf"
+      - "Makefile"
+      - "Dockerfile"
       - ".github/workflows/documentation.yml"
 
 concurrency:
@@ -18,7 +20,7 @@ permissions:
 jobs:
   docs:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6

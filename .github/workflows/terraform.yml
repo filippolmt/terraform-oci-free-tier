@@ -93,9 +93,7 @@ jobs:
       - name: Check docs are up-to-date
         id: docs
         if: ${{ github.event_name == 'pull_request' && !cancelled() && steps.build.outcome == 'success' }}
-        run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test terraform-docs markdown table --output-file README.md --output-mode inject .
-          git diff --exit-code README.md || (echo "README.md is out of date. Run 'make docs' and commit." && exit 1)
+        run: make BUILD_IMAGE=0 docs-check
 
       - name: Security scan (SARIF)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}

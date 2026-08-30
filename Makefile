@@ -16,9 +16,14 @@ help: ## Show this help
 	@echo "Targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
+# Set BUILD_IMAGE=0 when the image already exists (CI builds it once with buildx)
+BUILD_IMAGE ?= 1
+
 build: ## Build the Docker image
+ifeq ($(BUILD_IMAGE),1)
 	@echo "$(GREEN)Building Docker image...$(NC)"
 	docker build -t $(IMAGE_NAME) .
+endif
 
 fmt: build ## Format OpenTofu files
 	@echo "$(GREEN)Formatting OpenTofu files...$(NC)"

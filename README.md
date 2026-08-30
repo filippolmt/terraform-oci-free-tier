@@ -1,6 +1,6 @@
 # Terraform OCI Free Tier
 
-This repository provides OpenTofu/Terraform configurations for deploying resources in the Oracle Cloud Infrastructure (OCI) Free Tier.
+An OpenTofu/Terraform root module that provisions a self-hosted stack on Oracle Cloud Infrastructure using only Always Free resources: an ARM64 VM with Docker, an optional RunTipi homeserver and an optional WireGuard client.
 
 > **Upgrading from v4.x or earlier?** v5.0.0 lowers the default instance to 2 OCPUs / 12 GB and makes `region` required. See the [CHANGELOG](CHANGELOG.md) for breaking changes and migration guide, and [What can cost you money — or take your instance away](#what-can-cost-you-money--or-take-your-instance-away) for why.
 

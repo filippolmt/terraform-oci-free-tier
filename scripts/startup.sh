@@ -136,7 +136,10 @@ fi
 # Idempotent: drop-in files are overwritten in place, fstab/swap entries are
 # guarded against duplicates. Bug fixes (timezone above) apply unconditionally;
 # behavior-changing items (swap, auto-reboot, fail2ban, Docker data-root) are
-# gated on their Terraform variables and default to off.
+# gated on their Terraform variables. Only swap is on by default; the rest
+# default to off. Every one of them is non-fatal: Phase A must reach the
+# mnt-data-setup.service installation at the end of the script no matter what,
+# because user_data never runs again.
 # =============================================================================
 log "=== Applying OS tuning and hardening ==="
 
@@ -190,26 +193,40 @@ log "inotify limits drop-in written (max_user_instances=512, max_user_watches=52
 # --- Optional swap file (#164.3) + vm.swappiness (#165.6) ---
 if [ "${SWAP_SIZE_GB}" -gt 0 ]; then
   SWAPFILE="/swapfile"
+  SWAP_ACTIVE=0
   if [ -f "$SWAPFILE" ] || swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$SWAPFILE"; then
     log "Swapfile $SWAPFILE already present, skipping creation"
+    SWAP_ACTIVE=1
   else
     log "Creating ${SWAP_SIZE_GB}G swapfile at $SWAPFILE"
-    if ! fallocate -l "${SWAP_SIZE_GB}G" "$SWAPFILE" 2>/dev/null; then
-      dd if=/dev/zero of="$SWAPFILE" bs=1G count="${SWAP_SIZE_GB}" status=none
+    # Non-fatal, and deliberately so: swap is on by default, and a boot volume
+    # too full to hold the swapfile must not abort Phase A before it installs
+    # mnt-data-setup.service. Without that service there is no /mnt/data mount,
+    # no RunTipi, and no way to repair it from Terraform.
+    if { fallocate -l "${SWAP_SIZE_GB}G" "$SWAPFILE" 2>/dev/null ||
+      dd if=/dev/zero of="$SWAPFILE" bs=1G count="${SWAP_SIZE_GB}" status=none; } &&
+      chmod 600 "$SWAPFILE" &&
+      mkswap "$SWAPFILE" &&
+      swapon "$SWAPFILE"; then
+      log "Swapfile active (${SWAP_SIZE_GB}G)"
+      SWAP_ACTIVE=1
+    else
+      log_error "Swapfile setup failed (out of disk space?); continuing without swap"
+      swapoff "$SWAPFILE" 2>/dev/null || true
+      rm -f "$SWAPFILE"
     fi
-    chmod 600 "$SWAPFILE"
-    mkswap "$SWAPFILE"
-    swapon "$SWAPFILE"
-    log "Swapfile active (${SWAP_SIZE_GB}G)"
   fi
-  # Persist in fstab without duplicating the entry on re-run
-  if ! grep -qF "$SWAPFILE" /etc/fstab; then
-    echo "$SWAPFILE none swap sw 0 0" >>/etc/fstab
-    log "Added swapfile entry to /etc/fstab"
+
+  if [ "$SWAP_ACTIVE" -eq 1 ]; then
+    # Persist in fstab without duplicating the entry on re-run
+    if ! grep -qF "$SWAPFILE" /etc/fstab; then
+      echo "$SWAPFILE none swap sw 0 0" >>/etc/fstab
+      log "Added swapfile entry to /etc/fstab"
+    fi
+    # vm.swappiness is only meaningful with swap enabled
+    echo "vm.swappiness=10" >/etc/sysctl.d/99-oci-free-tier-swap.conf
+    log "vm.swappiness=10 drop-in written"
   fi
-  # vm.swappiness is only meaningful with swap enabled
-  echo "vm.swappiness=10" >/etc/sysctl.d/99-oci-free-tier-swap.conf
-  log "vm.swappiness=10 drop-in written"
 fi
 
 # Apply all sysctl drop-ins

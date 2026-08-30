@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Terraform module for deploying Oracle Cloud Infrastructure (OCI) Free Tier resources. Provisions an ARM-based VM (VM.Standard.A1.Flex) with Docker, optional RunTipi homeserver, and optional WireGuard VPN client.
 
-**Current version: 4.2.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v3.x.
+**Current version: 5.0.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v4.x.
 
 ## Commands
 
@@ -35,9 +35,9 @@ terraform-docs and Trivy run only in CI — there is no local target for either.
 
 ## Architecture
 
-Requires OpenTofu/Terraform `>= 1.3` with OCI provider pinned to `8.17.0` (strict, managed by Renovate).
+Requires OpenTofu/Terraform `>= 1.6` (the floor for `check` blocks) with the OCI provider pinned strictly (managed by Renovate).
 
-Infrastructure is split into domain-specific files (no submodules): `network.tf` (VCN, Subnet, Internet Gateway, Route Table, Security List), `compute.tf` (Instance, Public IP, data sources), and `storage.tf` (Block Volume, Volume Attachment, Backup Policy). The module creates a compute instance (ARM64, 4 OCPUs, 24GB RAM), a separate block volume (150GB) for Docker data mounted at `/mnt/data`, a reserved public IP, and a daily backup policy (3-day retention to stay within Free Tier's 5-backup limit).
+Infrastructure is split into domain-specific files (no submodules): `network.tf` (VCN, Subnet, Internet Gateway, Route Table, Security List), `compute.tf` (Instance, Public IP, data sources), and `storage.tf` (Block Volume, Volume Attachment, Backup Policy), and `checks.tf` (Always Free cap locals, region-subscriptions data source, advisory `check` block). The module creates a compute instance (ARM64, 2 OCPUs, 12GB RAM), a separate block volume (150GB) for Docker data mounted at `/mnt/data`, a reserved public IP, and a daily backup policy (3-day retention to stay within Free Tier's 5-backup limit).
 
 State backend defaults to local. See `backend.tf.example` for OCI Object Storage (S3-compatible) remote backend configuration.
 
@@ -46,7 +46,9 @@ State backend defaults to local. See `backend.tf.example` for OCI Object Storage
 - **`prevent_destroy` on docker_volume**: The block volume in `storage.tf` has `lifecycle { prevent_destroy = true }`. Destroying the stack requires manually removing this lifecycle rule or using `tofu state rm` first.
 - **`ignore_changes` on user_data**: The instance in `compute.tf` has `lifecycle { ignore_changes = [metadata["user_data"]] }` to prevent instance recreation when the startup script changes.
 - **Startup script is a `templatefile()`**: `scripts/startup.sh` is rendered via `templatefile()` in the instance's `user_data` metadata block in `compute.tf`. Any new shell variable in the script must have a matching Terraform variable passed in the `templatefile()` call. Existing template variables: `ADDITIONAL_SSH_PUB_KEY`, `TIMEZONE`, `INSTALL_RUNTIPI`, `RUNTIPI_REVERSE_PROXY_IP`, `RUNTIPI_MAIN_NETWORK_SUBNET`, `RUNTIPI_ADGUARD_IP`, `WIREGUARD_CLIENT_CONFIGURATION`.
-- **Free Tier validation rules**: `variables.tf` includes validation blocks that enforce Free Tier limits (max 4 OCPUs, max 24GB RAM, minimum volume sizes, CIDR format, fault domain format).
+- **Always Free caps and the opt-in flag**: the Always Free caps are 2 OCPUs / 12GB RAM and 200GB of total block storage (boot + Docker volume), and Always Free eligibility is scoped to the tenancy home region. All three are enforced by `precondition` blocks that `var.acknowledge_billable_resources` (default `false`) unlocks — one flag for all three, see `docs/adr/0002-*` and `docs/adr/0003-*`. The shared locals (`within_compute_caps`, `within_storage_cap`, `region_is_home`, `total_storage_gb`, `home_regions`) live in `checks.tf`; the preconditions live inside the **existing** `lifecycle` blocks (`ignore_changes` on `oci_core_instance.instance`, `prevent_destroy` on `oci_core_volume.docker_volume`). The `check "always_free_caps"` block is the advisory half, warning users who did set the flag.
+- **Home region lookup**: `data.oci_identity_region_subscriptions.tenancy` is `count`-gated on `var.tenancy_ocid != null`, since SecurityToken and principal auth read the tenancy from the session profile. With no tenancy to query, `local.home_regions` is empty and the home-region check passes rather than blocking.
+- **Variable validation rules**: `variables.tf` validation blocks are a hard ceiling, deliberately looser than the caps (max 4 OCPUs, max 24GB RAM — the pre-June-2026 allocation), plus minimum volume sizes, CIDR format and fault domain format. Blocking at the caps is the preconditions' job, not validation's.
 - **Region image OCIDs**: `variables.tf` contains a `instance_image_ocids_by_region` map with Ubuntu 24.04 ARM64 image OCIDs for 35+ OCI regions. When updating the base image, every region OCID must be updated. These are managed by Renovate when possible.
 - **Ingress firewall rules**: Managed via `locals` in `network.tf`. SSH (22/TCP, source configurable via `ssh_source_cidr`) and ICMP fragmentation (type 3, code 4) are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when `install_runtipi = true`. Ping is controlled by `enable_ping` (default: false). Custom rules use `custom_ingress_security_rules` with a simplified type (protocol + ports + source, all validated). OCI protocol identifiers: `"6"` = TCP, `"17"` = UDP, `"1"` = ICMP.
 - **Egress firewall rules**: Controlled by `enable_unrestricted_egress` (default: `true` — all outbound traffic allowed). When `false`, only `egress_security_rules` are applied (default: HTTPS, HTTP, DNS, NTP).
@@ -83,6 +85,6 @@ Renovate (`renovate.json`) auto-updates: OCI provider version in `versions.tf`, 
 
 ## Variables
 
-Required (set in `terraform.tfvars` or `TF_VAR_*` env vars): `compartment_ocid`, `tenancy_ocid`, `user_ocid`, `oracle_api_key_fingerprint`, `ssh_public_key`. See `terraform.tfvars.template` for the format.
+Required (set in `terraform.tfvars` or `TF_VAR_*` env vars): `compartment_ocid`, `region` (no default — must be the tenancy home region), `tenancy_ocid`, `user_ocid`, `oracle_api_key_fingerprint`, `ssh_public_key`. See `terraform.tfvars.template` for the format.
 
-Notable optional: `install_runtipi` (default: `true`), `enable_ping` (default: `false`), `ssh_source_cidr` (default: `"0.0.0.0/0"`), `timezone` (default: `"Europe/Rome"`, IANA format), `custom_ingress_security_rules` (simplified: protocol + ports + source, all validated), `enable_unrestricted_egress` (default: `true` — all outbound allowed; set to `false` for restrictive egress), `egress_security_rules` (only used when unrestricted egress is disabled), `wireguard_client_configuration` (must start with `[Interface]` or be empty), `kms_key_id` for volume encryption, `freeform_tags` (default: `{ManagedBy=Terraform}`).
+Notable optional: `acknowledge_billable_resources` (default: `false` — unlocks compute above the caps, storage above 200GB, and a non-home region), `install_runtipi` (default: `true`), `enable_ping` (default: `false`), `ssh_source_cidr` (default: `"0.0.0.0/0"`), `timezone` (default: `"Europe/Rome"`, IANA format), `custom_ingress_security_rules` (simplified: protocol + ports + source, all validated), `enable_unrestricted_egress` (default: `true` — all outbound allowed; set to `false` for restrictive egress), `egress_security_rules` (only used when unrestricted egress is disabled), `wireguard_client_configuration` (must start with `[Interface]` or be empty), `kms_key_id` for volume encryption, `freeform_tags` (default: `{ManagedBy=Terraform}`).

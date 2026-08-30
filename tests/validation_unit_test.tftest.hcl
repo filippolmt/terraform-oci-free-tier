@@ -13,6 +13,17 @@ mock_provider "oci" {
       }]
     }
   }
+  mock_data "oci_identity_region_subscriptions" {
+    defaults = {
+      region_subscriptions = [{
+        is_home_region = true
+        region_key     = "LIN"
+        region_name    = "eu-milan-1"
+        state          = "READY"
+        tenancy_id     = "ocid1.tenancy.oc1..mock"
+      }]
+    }
+  }
 }
 
 variables {
@@ -21,6 +32,7 @@ variables {
   user_ocid                  = "ocid1.user.oc1..mock"
   oracle_api_key_fingerprint = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
   ssh_public_key             = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest mock@test"
+  region                     = "eu-milan-1"
 }
 
 # --- Region validation ---
@@ -70,7 +82,7 @@ run "invalid_subnet_cidr" {
   expect_failures = [var.subnet_cidr_block]
 }
 
-# --- Free Tier OCPU limits ---
+# --- OCPU validation ceiling ---
 
 run "ocpus_exceeds_free_tier" {
   command = plan
@@ -88,7 +100,7 @@ run "ocpus_below_minimum" {
   expect_failures = [var.instance_shape_config_ocpus]
 }
 
-# --- Free Tier memory limits ---
+# --- Memory validation ceiling ---
 
 run "memory_exceeds_free_tier" {
   command = plan
@@ -258,16 +270,17 @@ run "valid_boundary_max_values" {
     instance_shape_config_memory_gb    = 24
     instance_shape_boot_volume_size_gb = 50
     docker_volume_size_gb              = 50
+    acknowledge_billable_resources     = true
   }
 
   assert {
     condition     = oci_core_instance.instance.shape_config[0].ocpus == 4
-    error_message = "4 OCPUs (Free Tier max) should be valid"
+    error_message = "4 OCPUs (validation ceiling) should be valid once billable resources are acknowledged"
   }
 
   assert {
     condition     = oci_core_instance.instance.shape_config[0].memory_in_gbs == 24
-    error_message = "24GB RAM (Free Tier max) should be valid"
+    error_message = "24GB RAM (validation ceiling) should be valid once billable resources are acknowledged"
   }
 
   assert {
@@ -279,6 +292,8 @@ run "valid_boundary_max_values" {
     condition     = tonumber(oci_core_volume.docker_volume.size_in_gbs) == 50
     error_message = "50GB Docker volume (minimum) should be valid"
   }
+
+  expect_failures = [check.always_free_caps]
 }
 
 run "valid_boundary_min_values" {
@@ -336,4 +351,118 @@ run "apikey_missing_credentials" {
   }
 
   expect_failures = [oci_core_instance.instance]
+}
+
+# --- Always Free caps and home region (preconditions) ---
+
+run "compute_above_caps_without_acknowledgement" {
+  command = plan
+  variables {
+    instance_shape_config_ocpus     = 4
+    instance_shape_config_memory_gb = 24
+  }
+
+  expect_failures = [
+    oci_core_instance.instance,
+    check.always_free_caps,
+  ]
+}
+
+run "memory_alone_above_cap_without_acknowledgement" {
+  command = plan
+  variables {
+    instance_shape_config_memory_gb = 13
+  }
+
+  expect_failures = [
+    oci_core_instance.instance,
+    check.always_free_caps,
+  ]
+}
+
+run "compute_at_caps_needs_no_acknowledgement" {
+  command = plan
+  variables {
+    instance_shape_config_ocpus     = 2
+    instance_shape_config_memory_gb = 12
+  }
+
+  assert {
+    condition     = oci_core_instance.instance.shape_config[0].ocpus == 2
+    error_message = "2 OCPUs / 12GB is the Always Free cap and must plan without acknowledgement"
+  }
+}
+
+run "storage_above_cap_without_acknowledgement" {
+  command = plan
+  variables {
+    instance_shape_boot_volume_size_gb = 50
+    docker_volume_size_gb              = 200
+  }
+
+  expect_failures = [
+    oci_core_volume.docker_volume,
+    check.always_free_caps,
+  ]
+}
+
+run "storage_above_cap_with_acknowledgement" {
+  command = plan
+  variables {
+    instance_shape_boot_volume_size_gb = 50
+    docker_volume_size_gb              = 200
+    acknowledge_billable_resources     = true
+  }
+
+  assert {
+    condition     = tonumber(oci_core_volume.docker_volume.size_in_gbs) == 200
+    error_message = "250GB total should plan once billable resources are acknowledged"
+  }
+
+  expect_failures = [check.always_free_caps]
+}
+
+run "region_outside_home_region_without_acknowledgement" {
+  command = plan
+  variables {
+    region = "us-ashburn-1"
+  }
+
+  expect_failures = [
+    oci_core_instance.instance,
+    check.always_free_caps,
+  ]
+}
+
+run "region_outside_home_region_with_acknowledgement" {
+  command = plan
+  variables {
+    region                         = "us-ashburn-1"
+    acknowledge_billable_resources = true
+  }
+
+  assert {
+    condition     = oci_core_instance.instance.source_details[0].source_id == var.instance_image_ocids_by_region["us-ashburn-1"]
+    error_message = "A non-home region should plan once billable resources are acknowledged"
+  }
+
+  expect_failures = [check.always_free_caps]
+}
+
+# With no tenancy_ocid the module cannot read the region subscriptions, so the
+# home-region precondition passes rather than blocking.
+run "region_unchecked_without_tenancy_ocid" {
+  command = plan
+  variables {
+    auth_method                = "SecurityToken"
+    tenancy_ocid               = null
+    user_ocid                  = null
+    oracle_api_key_fingerprint = null
+    region                     = "us-ashburn-1"
+  }
+
+  assert {
+    condition     = oci_core_instance.instance.compartment_id == "ocid1.compartment.oc1..mock"
+    error_message = "An unknowable home region must not block the plan"
+  }
 }

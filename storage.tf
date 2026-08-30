@@ -9,6 +9,13 @@ resource "oci_core_volume" "docker_volume" {
 
   lifecycle {
     prevent_destroy = true
+
+    # Always Free caps 200 GB of block storage across the boot volume and this
+    # one (ADR-0002). The excess is billed per GB per month.
+    precondition {
+      condition     = var.acknowledge_billable_resources || local.within_storage_cap
+      error_message = "Boot volume (${var.instance_shape_boot_volume_size_gb} GB) plus Docker volume (${var.docker_volume_size_gb} GB) is ${local.total_storage_gb} GB, above the Always Free cap of 200 GB. Lower instance_shape_boot_volume_size_gb or docker_volume_size_gb, or set acknowledge_billable_resources = true to provision billable resources deliberately."
+    }
   }
 }
 

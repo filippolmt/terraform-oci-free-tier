@@ -2,7 +2,7 @@
 
 This repository provides OpenTofu/Terraform configurations for deploying resources in the Oracle Cloud Infrastructure (OCI) Free Tier.
 
-> **Upgrading from v3.x or v2.x?** See the [CHANGELOG](CHANGELOG.md) for breaking changes and migration guide.
+> **Upgrading from v4.x or earlier?** v5.0.0 lowers the default instance to 2 OCPUs / 12 GB and makes `region` required. See the [CHANGELOG](CHANGELOG.md) for breaking changes and migration guide, and [What can cost you money — or take your instance away](#what-can-cost-you-money--or-take-your-instance-away) for why.
 
 ## Table of Contents
 
@@ -12,6 +12,7 @@ This repository provides OpenTofu/Terraform configurations for deploying resourc
   - [Prerequisites](#prerequisites)
   - [Setup](#setup)
   - [Authentication](#authentication)
+  - [What can cost you money — or take your instance away](#what-can-cost-you-money--or-take-your-instance-away)
   - [Usage](#usage)
   - [Files](#files)
   - [Security Configuration](#security-configuration)
@@ -98,6 +99,59 @@ config_file_profile = "<your-session-profile>" # the profile created by `oci ses
 > The provider also accepts `InstancePrincipal`, `InstancePrincipalWithCerts`, and
 > `ResourcePrincipal` as `auth_method` values for in-cloud execution.
 
+## What can cost you money — or take your instance away
+
+This module targets the **Always Free** allocation: resources Oracle grants
+perpetually at no cost, with fixed per-tenancy caps. There are four ways to end
+up outside it. The first two the module refuses to do unless you set
+`acknowledge_billable_resources = true`; the last two it cannot prevent.
+
+**1. Exceeding an Always Free cap.** Since 15 June 2026 the Ampere A1 Compute
+allocation is **2 OCPUs and 12 GB of memory** (previously 4 and 24), with a
+monthly budget of 1,500 OCPU hours and 9,000 GB hours. Block storage is
+**200 GB total** across the boot volume and the Docker volume — the module's
+defaults (50 GB + 150 GB) sit exactly on that line. On a Pay-As-You-Go account
+the excess is billed; on a Free Tier account OCI refuses the resource, and
+instances already above the cap have been terminated.
+
+Do not assume a Pay-As-You-Go account is safe at the old 4/24 sizing. Oracle
+Support has told some users it is, but Oracle's own documentation applies the
+new caps to every tenancy, and Pay-As-You-Go users have reported both the
+reduction notice and billing alerts on a single 4/24 instance.
+
+**2. Building outside your home region.** Always Free eligibility is scoped to
+the single region your tenancy was anchored to at sign-up. Elsewhere there is no
+Always Free allocation at all: the instance and every GB of storage are billed
+at full price, not just the excess over the caps. `region` is a required
+variable with no default, and the module compares it against the tenancy's home
+region before it will build. (The comparison is skipped when `tenancy_ocid` is
+null — with session-token or principal auth the module has no tenancy to query.)
+
+That comparison reads `data.oci_identity_region_subscriptions`, so whatever
+credentials you run with need `inspect tenancies` on the tenancy. A tenancy
+admin — the usual case on a Free Tier account — already has it. A
+compartment-scoped service user may not, and `plan` will then fail on the data
+source read with `NotAuthorizedOrNotFound` rather than on the precondition.
+
+**3. Idle reclamation.** Oracle reclaims an Always Free compute instance that
+stays below 20% CPU, network *and* memory utilisation across a seven-day window.
+This is independent of the caps: a perfectly compliant instance can still be
+taken. A container workload with real traffic generally stays above the
+threshold; an idle Docker host may not.
+
+**4. "Out of host capacity" on recreation.** Always Free Ampere A1 capacity is
+frequently exhausted in popular regions, and failing to create an instance is
+the common experience rather than the exception. Resizing an existing instance
+down is an in-place change with a reboot and is safe. Destroying an instance to
+rebuild it smaller may leave you with nothing.
+
+### Other limits worth knowing
+
+- **10 TB of outbound data transfer per month**, tenancy-wide.
+- **Network bandwidth and VNIC count scale with OCPUs** — at 2 OCPUs you get
+  half the bandwidth of a 4-OCPU instance.
+- **2 VCNs per tenancy** on a Free Tier account. This module creates one.
+
 ## Usage
 
 1. **Plan the deployment**:
@@ -134,7 +188,8 @@ config_file_profile = "<your-session-profile>" # the profile created by `oci ses
 - `network.tf`: Networking resources (VCN, Subnet, Internet Gateway, Route Table, Security List).
 - `compute.tf`: Compute resources (Instance, Public IP, data sources).
 - `storage.tf`: Storage resources (Block Volume, Volume Attachment, Backup Policy).
-- `variables.tf`: Defines the variables used in the Terraform configuration. Includes Free Tier validation rules for OCPUs, RAM, and volume sizes.
+- `variables.tf`: Defines the variables used in the Terraform configuration. Includes validation rules for OCPUs, RAM, and volume sizes.
+- `checks.tf`: Always Free cap and home-region logic — the region-subscriptions data source, the shared locals, and the advisory `check` block.
 - `outputs.tf`: Defines the outputs of the Terraform configuration.
 - `terraform.tfvars.template`: Template for user-specific variables.
 - `scripts/startup.sh`: Cloud-init script for initial setup. Features:
@@ -226,7 +281,7 @@ This project is licensed under the MIT License. See the [LICENSE](./LICENSE) fil
 
 | Name | Version |
 |------|---------|
-| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >=1.3 |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.6 |
 | <a name="requirement_oci"></a> [oci](#requirement\_oci) | 8.29.0 |
 
 ## Providers
@@ -263,6 +318,7 @@ No modules.
 |------|-------------|------|---------|:--------:|
 | <a name="input_additional_ssh_public_key"></a> [additional\_ssh\_public\_key](#input\_additional\_ssh\_public\_key) | Additional SSH public key to add to authorized\_keys (optional) | `string` | `""` | no |
 | <a name="input_auth_method"></a> [auth\_method](#input\_auth\_method) | OCI provider authentication method. Use "ApiKey" for API key auth or "SecurityToken" for CLI session-token auth (oci session authenticate). | `string` | `"ApiKey"` | no |
+| <a name="input_acknowledge_billable_resources"></a> [acknowledge\_billable\_resources](#input\_acknowledge\_billable\_resources) | Acknowledge that the configuration provisions resources outside the Always Free allocation. Unlocks three things: compute above 2 OCPUs / 12 GB, more than 200 GB of total block storage, and a region other than the tenancy home region. On a Pay-As-You-Go account these are billed; on a Free Tier account they are refused by OCI. | `bool` | `false` | no |
 | <a name="input_auto_reboot_time"></a> [auto\_reboot\_time](#input\_auto\_reboot\_time) | Time of day (HH:MM, 24-hour) for the unattended-upgrades automatic reboot. Only used when enable\_auto\_reboot=true. | `string` | `"03:30"` | no |
 | <a name="input_availability_domain_number"></a> [availability\_domain\_number](#input\_availability\_domain\_number) | The availability domain number (1-3 depending on region) | `number` | `1` | no |
 | <a name="input_compartment_ocid"></a> [compartment\_ocid](#input\_compartment\_ocid) | The OCID of the compartment | `string` | n/a | yes |
@@ -282,19 +338,19 @@ No modules.
 | <a name="input_instance_image_ocids_by_region"></a> [instance\_image\_ocids\_by\_region](#input\_instance\_image\_ocids\_by\_region) | Map of OCI region to Ubuntu 24.04 ARM64 image OCID | `map(string)` | <pre>{<br/>  "af-johannesburg-1": "ocid1.image.oc1.af-johannesburg-1.aaaaaaaac74zk4rm447grg5rmu6ex2xj2sipgue2y26jpvquwxyfw6g2xowq",<br/>  "ap-chuncheon-1": "ocid1.image.oc1.ap-chuncheon-1.aaaaaaaaa3cuoai5lfap4e2w3l5jk5262rvafl7dpwlistkkntexiu5h25bq",<br/>  "ap-hyderabad-1": "ocid1.image.oc1.ap-hyderabad-1.aaaaaaaaxxuf3ebmgzy32bzlfjhbyr4vpn3rqtqodi5c24kwjojosea6zzbq",<br/>  "ap-melbourne-1": "ocid1.image.oc1.ap-melbourne-1.aaaaaaaameaiob3abo7nzzg4hb2kmwi5ihqmkpbwt2hax65szewv52rt3z6a",<br/>  "ap-mumbai-1": "ocid1.image.oc1.ap-mumbai-1.aaaaaaaacm56ci4xs3fqx7zsrxvedeqplrlp6gxy6lnga4qi62wywssusmkq",<br/>  "ap-osaka-1": "ocid1.image.oc1.ap-osaka-1.aaaaaaaawzfbc5pjimseh6eisfqhfztalzx46h5bhntvxomckmulk7hqtyoa",<br/>  "ap-seoul-1": "ocid1.image.oc1.ap-seoul-1.aaaaaaaay3tcv6ttdutmyu32prvdidg5lojd2lzhue4eqnycor5oofiodeyq",<br/>  "ap-singapore-1": "ocid1.image.oc1.ap-singapore-1.aaaaaaaamhhpqoyiobauojy3m2huj6tusesizrggbpek2wo4tksiwwv43ihq",<br/>  "ap-sydney-1": "ocid1.image.oc1.ap-sydney-1.aaaaaaaahbktlxr6owykyfvduw5b24giid5stnncevl2nif6pdcgtscd5h5q",<br/>  "ap-tokyo-1": "ocid1.image.oc1.ap-tokyo-1.aaaaaaaaj7gohm3adsdbhhn7emx7bd6jny7dj5mipwnq62ub6eeryjgr7gnq",<br/>  "ca-montreal-1": "ocid1.image.oc1.ca-montreal-1.aaaaaaaacezsnh42klz6sd5hlqsrlmypeqk4hxo3xphii4qa2l2gw2lkkm7a",<br/>  "ca-toronto-1": "ocid1.image.oc1.ca-toronto-1.aaaaaaaaypprlzb5aftk77ltpwspqtvdk2bbtsxiknqycci2kxznfcuihfsa",<br/>  "eu-amsterdam-1": "ocid1.image.oc1.eu-amsterdam-1.aaaaaaaaadazle32svd6dhz4ano5iqxh22bqoy3c6gaodvhg7x7iaq23yxnq",<br/>  "eu-frankfurt-1": "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaajzudgoto32j5q245xjkm2p7nj6rrza2bb5yyqjgm56k4ib2to6sq",<br/>  "eu-madrid-1": "ocid1.image.oc1.eu-madrid-1.aaaaaaaawo47bihidpyebw2zlaptpbmeqx7zsww6bllr4uybttrblcmtmvjq",<br/>  "eu-marseille-1": "ocid1.image.oc1.eu-marseille-1.aaaaaaaa3334ijm2zwbgmkqrrbkh2ecyekudopjkcndrrw5nhbeoyk66kiqa",<br/>  "eu-milan-1": "ocid1.image.oc1.eu-milan-1.aaaaaaaae3hiyvu2hdfblxr4xp2tpvbiow7nvpner6ekvysc5whmzyaqjoqa",<br/>  "eu-paris-1": "ocid1.image.oc1.eu-paris-1.aaaaaaaaeagkmkwv5cl7x2f2ylekvqxlnnlkahuepxmck7yawdkjmg6e5ypq",<br/>  "eu-stockholm-1": "ocid1.image.oc1.eu-stockholm-1.aaaaaaaad5qwbyuemyoa2hrngbb4iydmb5nfcfn3s3jki7qqhlmkomoscv6q",<br/>  "eu-zurich-1": "ocid1.image.oc1.eu-zurich-1.aaaaaaaas6gvo5dqyqpisatcs56my2ldwc4xc57lydfrzfbuutnhjceapdqq",<br/>  "il-jerusalem-1": "ocid1.image.oc1.il-jerusalem-1.aaaaaaaac5e6i6ztlu7ksbn6qujaaqlgpr7xdpcryms3fviq6kpn26p3jhaa",<br/>  "me-abudhabi-1": "ocid1.image.oc1.me-abudhabi-1.aaaaaaaay4xdwt2tzpsqkifdxciuvbvfqwdij2btal7w2gucdguux6vs2iia",<br/>  "me-dubai-1": "ocid1.image.oc1.me-dubai-1.aaaaaaaalu3waogupaq2b2kvi4ny6uxuvjdbdfvgchpk7toinrn7ei6l7toq",<br/>  "me-jeddah-1": "ocid1.image.oc1.me-jeddah-1.aaaaaaaarqfbmwhhapsjv6ncotol2haolzsjg4bkqxngn7cjtdshohee575a",<br/>  "mx-monterrey-1": "ocid1.image.oc1.mx-monterrey-1.aaaaaaaayjefqnzikropxrizlxkdqlu4e4n7mallxolsur2ua2szyoczicza",<br/>  "mx-queretaro-1": "ocid1.image.oc1.mx-queretaro-1.aaaaaaaalob3n6p7hb2c7cabvax6cmzzcrxxl2cexakvytmhfi4vopusjwyq",<br/>  "sa-bogota-1": "ocid1.image.oc1.sa-bogota-1.aaaaaaaac5aytlzu6lk5s6n7frapmvg5xgkpdmc7fci6b56urie54ea46paa",<br/>  "sa-santiago-1": "ocid1.image.oc1.sa-santiago-1.aaaaaaaaeyf2gv5wo5mzsijd3zparivuzwexxaovx3fes3b4am6qn4vjkwrq",<br/>  "sa-saopaulo-1": "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaayiprqwic72dwa6teukf4uyd2vqntqvm4cddvvvjcttsn7zn6jsza",<br/>  "sa-valparaiso-1": "ocid1.image.oc1.sa-valparaiso-1.aaaaaaaau4tjiejqqzfdbelzskgjvbkuc4n3rmwwylzuk3oon3l32ee5ydja",<br/>  "sa-vinhedo-1": "ocid1.image.oc1.sa-vinhedo-1.aaaaaaaahqhs7fl5b2eoarmbv2hibeum4qp6xf7bpuvndsxbwxow2g66xxka",<br/>  "uk-cardiff-1": "ocid1.image.oc1.uk-cardiff-1.aaaaaaaa3tw6w7xa3crrtumyidagfy5sfffm5ulf5wk4n4enq56cfgv3r7pq",<br/>  "uk-london-1": "ocid1.image.oc1.uk-london-1.aaaaaaaahfrghsffkvpikumb7v42bsxlk23medjry234dcspckdnbifbsocq",<br/>  "us-ashburn-1": "ocid1.image.oc1.iad.aaaaaaaaowocjhlbitbc5la6hvimvhi7iseebfzj2honlkyjgqdpuy5syxea",<br/>  "us-chicago-1": "ocid1.image.oc1.us-chicago-1.aaaaaaaa7kpyzoekvmsyvvwutgbnjv2cb4heft7fotyaplsuacdidgxnodwa",<br/>  "us-phoenix-1": "ocid1.image.oc1.phx.aaaaaaaasw7zpqcko4iqizjsnco6e4md6sxmiimdaedzzbb2appwvqn4uyma",<br/>  "us-sanjose-1": "ocid1.image.oc1.us-sanjose-1.aaaaaaaakvkyx6huyxk7vikyswxdcpxt74ix3nwgsbozoxikyoawetjyq7ta"<br/>}</pre> | no |
 | <a name="input_instance_shape"></a> [instance\_shape](#input\_instance\_shape) | The OCI compute shape (VM.Standard.A1.Flex for Free Tier ARM instances) | `string` | `"VM.Standard.A1.Flex"` | no |
 | <a name="input_instance_shape_boot_volume_size_gb"></a> [instance\_shape\_boot\_volume\_size\_gb](#input\_instance\_shape\_boot\_volume\_size\_gb) | The size of the boot volume in GBs | `number` | `50` | no |
-| <a name="input_instance_shape_config_memory_gb"></a> [instance\_shape\_config\_memory\_gb](#input\_instance\_shape\_config\_memory\_gb) | The amount of memory in GBs for the instance | `number` | `24` | no |
-| <a name="input_instance_shape_config_ocpus"></a> [instance\_shape\_config\_ocpus](#input\_instance\_shape\_config\_ocpus) | The number of OCPUs for the instance | `number` | `4` | no |
+| <a name="input_instance_shape_config_memory_gb"></a> [instance\_shape\_config\_memory\_gb](#input\_instance\_shape\_config\_memory\_gb) | The amount of memory in GBs for the instance. The Always Free cap is 12 GB; anything above it requires acknowledge\_billable\_resources. | `number` | `12` | no |
+| <a name="input_instance_shape_config_ocpus"></a> [instance\_shape\_config\_ocpus](#input\_instance\_shape\_config\_ocpus) | The number of OCPUs for the instance. The Always Free cap is 2 OCPUs; anything above it requires acknowledge\_billable\_resources. | `number` | `2` | no |
 | <a name="input_kms_key_id"></a> [kms\_key\_id](#input\_kms\_key\_id) | The OCID of the KMS key to use for volume encryption. If null, volumes will not be encrypted with customer-managed keys. | `string` | `null` | no |
 | <a name="input_oracle_api_key_fingerprint"></a> [oracle\_api\_key\_fingerprint](#input\_oracle\_api\_key\_fingerprint) | The fingerprint of the OCI API public key (required only for ApiKey auth). | `string` | `null` | no |
 | <a name="input_oracle_api_private_key_path"></a> [oracle\_api\_private\_key\_path](#input\_oracle\_api\_private\_key\_path) | The path to the OCI API private key file | `string` | `"~/.oci/oci_api_key.pem"` | no |
-| <a name="input_region"></a> [region](#input\_region) | The OCI region to deploy resources | `string` | `"eu-milan-1"` | no |
+| <a name="input_region"></a> [region](#input\_region) | The OCI region to deploy resources. Must be the tenancy home region: Always Free eligibility is scoped to it, and instances and volumes built anywhere else are billed at full price. Building outside it requires acknowledge\_billable\_resources. | `string` | n/a | yes |
 | <a name="input_runtipi_adguard_ip"></a> [runtipi\_adguard\_ip](#input\_runtipi\_adguard\_ip) | The static IP for AdGuard. Must be within runtipi\_main\_network\_subnet and different from reverse proxy IP | `string` | `"172.18.0.253"` | no |
 | <a name="input_runtipi_main_network_subnet"></a> [runtipi\_main\_network\_subnet](#input\_runtipi\_main\_network\_subnet) | The Docker network subnet for RunTipi containers | `string` | `"172.18.0.0/16"` | no |
 | <a name="input_runtipi_reverse_proxy_ip"></a> [runtipi\_reverse\_proxy\_ip](#input\_runtipi\_reverse\_proxy\_ip) | The static IP for RunTipi reverse proxy (Traefik). Must be within runtipi\_main\_network\_subnet | `string` | `"172.18.0.254"` | no |
 | <a name="input_ssh_public_key"></a> [ssh\_public\_key](#input\_ssh\_public\_key) | The public key to use for SSH access | `string` | n/a | yes |
 | <a name="input_ssh_source_cidr"></a> [ssh\_source\_cidr](#input\_ssh\_source\_cidr) | Source CIDR allowed for SSH access (default: 0.0.0.0/0 — all IPs) | `string` | `"0.0.0.0/0"` | no |
 | <a name="input_subnet_cidr_block"></a> [subnet\_cidr\_block](#input\_subnet\_cidr\_block) | The CIDR block for the subnet (must be within vcn\_cidr\_block; OCI will reject it at apply time otherwise) | `string` | `"10.1.0.0/24"` | no |
-| <a name="input_swap_size_gb"></a> [swap\_size\_gb](#input\_swap\_size\_gb) | Size in GB of an optional swapfile created on the boot disk (/swapfile). 0 disables swap (default). When > 0, vm.swappiness=10 is also applied. | `number` | `0` | no |
+| <a name="input_swap_size_gb"></a> [swap\_size\_gb](#input\_swap\_size\_gb) | Size in GB of an optional swapfile created on the boot disk (/swapfile). 0 disables swap. When > 0, vm.swappiness=10 is also applied. Defaults to 4 GB, which offsets the reduced Always Free memory cap. | `number` | `4` | no |
 | <a name="input_tenancy_ocid"></a> [tenancy\_ocid](#input\_tenancy\_ocid) | The OCID of the tenancy (for SecurityToken auth it is read from the session profile and can be left null). | `string` | `null` | no |
 | <a name="input_timezone"></a> [timezone](#input\_timezone) | IANA timezone for the instance (e.g. Europe/Rome, America/New\_York, UTC) | `string` | `"Europe/Rome"` | no |
 | <a name="input_user_ocid"></a> [user\_ocid](#input\_user\_ocid) | The OCID of the user to use for authentication (required only for ApiKey auth). | `string` | `null` | no |

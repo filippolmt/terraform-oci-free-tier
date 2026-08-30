@@ -1,90 +1,165 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
-Terraform module for deploying Oracle Cloud Infrastructure (OCI) Free Tier resources. Provisions an ARM-based VM (VM.Standard.A1.Flex) with Docker, optional RunTipi homeserver, and optional WireGuard VPN client.
+OpenTofu/Terraform root module that provisions a self-hosting stack on Oracle
+Cloud Infrastructure using only Always Free resources: an ARM64 VM
+(`VM.Standard.A1.Flex`) with Docker, optional RunTipi homeserver, optional
+WireGuard client. Cloned and applied directly — never consumed as a child
+module, which is why the OCI provider is pinned to an exact version.
 
-**Current version: 5.0.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v4.x.
+`CONTEXT.md` is the glossary. It defines the vocabulary this repo uses
+everywhere — Always Free, Free Trial, Free Tier account, Pay-As-You-Go account,
+Always Free cap, billable resource, home region, idle reclamation — and records
+which near-synonyms to avoid. Read it before writing user-facing prose or error
+messages. Notably: "Always Free" names the resources, "Free Tier account" names
+only the account type.
+
+See [CHANGELOG.md](CHANGELOG.md) for the current version and its breaking
+changes, and `docs/adr/` for decisions with their rejected alternatives.
 
 ## Commands
 
-```bash
-# Requires tofu and shellcheck on PATH (see CONTRIBUTING.md)
-make test           # Run all checks: fmt-check → validate → tofu-test → shellcheck
-make fmt            # Auto-format .tf files
-make clean          # Remove .terraform/
-make help           # Show all available targets
+`make help` lists every target; `make test` runs the lot (fmt-check → validate →
+tofu-test → shellcheck). `CONTRIBUTING.md` covers the local setup — `tofu` and
+`shellcheck` on PATH, both from the toolbox.
 
-# Individual checks
-make fmt-check      # Check formatting without modifying
-make init           # tofu init -backend=false
-make validate       # Init + validate only
-make tofu-test      # Run OpenTofu native tests only
-make shellcheck     # Lint shell scripts only
+What those lookups will not tell you:
 
-# Run a single test file
-tofu test -filter=tests/validation_unit_test.tftest.hcl
-
-# Direct OpenTofu commands (require terraform.tfvars)
-tofu init && tofu plan
-```
-
-terraform-docs and Trivy run only in CI — there is no local target for either. tflint is not used at all. See `docs/adr/0001-drop-ci-container-image.md`.
+- **`make init` passes `-upgrade`**, so every `validate`/`test` re-resolves
+  `.terraform.lock.hcl`. The exact provider pin in `versions.tf` is what keeps
+  plans reproducible; a range constraint would let a provider major land
+  silently on whoever runs `init` next. Renovate owns the bump.
+- **One test file**: `tofu test -filter=tests/validation_unit_test.tftest.hcl`.
+- **terraform-docs and Trivy run only in CI.** There is no local target, so a
+  `.tf` change lands with the README tables stale until CI regenerates them.
 
 ## Architecture
 
-Requires OpenTofu/Terraform `>= 1.6` (the floor for `check` blocks) with the OCI provider pinned strictly (managed by Renovate).
+Requires OpenTofu/Terraform `>= 1.6` — the floor for `check` blocks.
 
-Infrastructure is split into domain-specific files (no submodules): `network.tf` (VCN, Subnet, Internet Gateway, Route Table, Security List), `compute.tf` (Instance, Public IP, data sources), and `storage.tf` (Block Volume, Volume Attachment, Backup Policy), and `checks.tf` (Always Free cap locals, region-subscriptions data source, advisory `check` block). The module creates a compute instance (ARM64, 2 OCPUs, 12GB RAM), a separate block volume (150GB) for Docker data mounted at `/mnt/data`, a reserved public IP, and a daily backup policy (3-day retention to stay within Free Tier's 5-backup limit).
+Split by domain, no submodules: `network.tf` (VCN, subnet, internet gateway,
+route table, security list), `compute.tf` (instance, reserved public IP, data
+sources), `storage.tf` (block volume, attachment, backup policy), `checks.tf`
+(Always Free locals, region-subscriptions lookup, advisory `check` block).
+State is local by default; `backend.tf.example` has the OCI Object Storage
+(S3-compatible) setup.
 
-State backend defaults to local. See `backend.tf.example` for OCI Object Storage (S3-compatible) remote backend configuration.
+The instance takes its public IP from a reserved `oci_core_public_ip` attached
+via a `data.oci_core_private_ips` lookup, not from `assign_public_ip`. The
+Docker volume runs at `vpus_per_gb = 10` (Balanced), the Always Free tier — the
+`0` "Lower Cost" value was removed in OCI provider v8.0.0. The backup policy retains
+3 days so the tenancy stays under the 5-backup allowance.
 
-### Critical Design Details
+## Always Free caps
 
-- **`prevent_destroy` on docker_volume**: The block volume in `storage.tf` has `lifecycle { prevent_destroy = true }`. Destroying the stack requires manually removing this lifecycle rule or using `tofu state rm` first.
-- **`ignore_changes` on user_data**: The instance in `compute.tf` has `lifecycle { ignore_changes = [metadata["user_data"]] }` to prevent instance recreation when the startup script changes.
-- **Startup script is a `templatefile()`**: `scripts/startup.sh` is rendered via `templatefile()` in the instance's `user_data` metadata block in `compute.tf`. Any new shell variable in the script must have a matching Terraform variable passed in the `templatefile()` call. Existing template variables: `ADDITIONAL_SSH_PUB_KEY`, `TIMEZONE`, `INSTALL_RUNTIPI`, `RUNTIPI_REVERSE_PROXY_IP`, `RUNTIPI_MAIN_NETWORK_SUBNET`, `RUNTIPI_ADGUARD_IP`, `WIREGUARD_CLIENT_CONFIGURATION`.
-- **Always Free caps and the opt-in flag**: the Always Free caps are 2 OCPUs / 12GB RAM and 200GB of total block storage (boot + Docker volume), and Always Free eligibility is scoped to the tenancy home region. All three are enforced by `precondition` blocks that `var.acknowledge_billable_resources` (default `false`) unlocks — one flag for all three, see `docs/adr/0002-*` and `docs/adr/0003-*`. The shared locals (`within_compute_caps`, `within_storage_cap`, `region_is_home`, `total_storage_gb`, `home_regions`) live in `checks.tf`; the preconditions live inside the **existing** `lifecycle` blocks (`ignore_changes` on `oci_core_instance.instance`, `prevent_destroy` on `oci_core_volume.docker_volume`). The `check "always_free_caps"` block is the advisory half, warning users who did set the flag.
-- **Home region lookup**: `data.oci_identity_region_subscriptions.tenancy` is `count`-gated on `var.tenancy_ocid != null`, since SecurityToken and principal auth read the tenancy from the session profile. With no tenancy to query, `local.home_regions` is empty and the home-region check passes rather than blocking.
-- **Variable validation rules**: `variables.tf` validation blocks are a hard ceiling, deliberately looser than the caps (max 4 OCPUs, max 24GB RAM — the pre-June-2026 allocation), plus minimum volume sizes, CIDR format and fault domain format. Blocking at the caps is the preconditions' job, not validation's.
-- **Region image OCIDs**: `variables.tf` contains a `instance_image_ocids_by_region` map with Ubuntu 24.04 ARM64 image OCIDs for 35+ OCI regions. When updating the base image, every region OCID must be updated. These are managed by Renovate when possible.
-- **Ingress firewall rules**: Managed via `locals` in `network.tf`. SSH (22/TCP, source configurable via `ssh_source_cidr`) and ICMP fragmentation (type 3, code 4) are always enabled. HTTP (80), HTTPS (443), and WireGuard (51820/UDP) are auto-added when `install_runtipi = true`. Ping is controlled by `enable_ping` (default: false). Custom rules use `custom_ingress_security_rules` with a simplified type (protocol + ports + source, all validated). OCI protocol identifiers: `"6"` = TCP, `"17"` = UDP, `"1"` = ICMP.
-- **Egress firewall rules**: Controlled by `enable_unrestricted_egress` (default: `true` — all outbound traffic allowed). When `false`, only `egress_security_rules` are applied (default: HTTPS, HTTP, DNS, NTP).
-- **Block volume performance**: `vpus_per_gb = 10` (Balanced tier, included in Free Tier). The "Lower Cost" tier (`vpus_per_gb = 0`) was removed in OCI provider v8.0.0.
-- **Public IP via reserved IP**: The instance is created with `assign_public_ip = false`; instead, a reserved IP is looked up via a `data.oci_core_private_ips` data source and attached as `oci_core_public_ip`.
+The caps are **2 OCPUs / 12 GB memory**, **200 GB of block storage** (boot +
+Docker volume), and **the tenancy home region** — outside it nothing is Always
+Free and the whole deployment is billed, not just the overage. `checks.tf`
+holds the shared locals (`within_compute_caps`, `within_storage_cap`,
+`region_is_home`, `total_storage_gb`, `home_regions`).
 
-### Startup Script (`scripts/startup.sh`) — Two-Phase Architecture
+`var.acknowledge_billable_resources` (default `false`) is one flag unlocking all
+three. It gates `precondition` blocks that refuse; the `check "always_free_caps"`
+block is the advisory half that warns whoever set the flag. Reasoning and
+rejected alternatives: `docs/adr/0002-always-free-cap-reduction.md` and
+`docs/adr/0003-require-explicit-home-region.md`.
 
-The startup script uses a two-phase architecture to handle the timing gap between instance boot and Terraform volume attachment:
+Three things here look like defects and are not:
 
-- **Phase A** (runs via cloud-init): System packages, Docker, SSH keys, timezone configuration — everything that doesn't need the block volume. Writes the Phase B script to `/opt/mnt-data-setup.sh` and installs a systemd oneshot service (`mnt-data-setup.service`) to execute it.
-- **Phase B** (runs via `mnt-data-setup.service`): Block volume detection with exponential backoff (up to 60 minutes), mount, Docker systemd override (ensures Docker waits for `/mnt/data` mount on reboot), RunTipi/WireGuard installation. Has its own `log()`, `log_error()`, `cleanup()`, `retry()` functions since it runs as a separate process.
+- **The preconditions live inside the `lifecycle` blocks that already exist** —
+  `ignore_changes` on `oci_core_instance.instance`, `prevent_destroy` on
+  `oci_core_volume.docker_volume`. A resource takes one `lifecycle` block.
+- **`variables.tf` validation ceilings are looser than the caps** (4 OCPUs,
+  24 GB — the pre-June-2026 allocation). Blocking at the cap is the
+  preconditions' job; validation is the hard ceiling above which the module
+  refuses outright.
+- **`data.oci_identity_region_subscriptions.tenancy` is `count`-gated** on
+  `var.tenancy_ocid != null`, because SecurityToken and principal auth read the
+  tenancy from the session profile. With no tenancy the home region is
+  unknowable and the check passes rather than blocking. Reading it needs
+  `inspect tenancies`; a compartment-scoped user fails on the data source read,
+  which `try()` cannot catch.
 
-**Why two phases**: Terraform creates the volume attachment AFTER the instance reaches RUNNING state. Cloud-init can time out waiting; a systemd service can wait up to 60 minutes with exponential backoff (10s, 15s, 22s, 33s, 49s, 60s...). The completion marker (`/var/log/.setup_script_completed`) is set at the end of Phase B (not Phase A), and the systemd unit uses `ConditionPathExists=!/var/log/.setup_script_completed` for idempotency. Phase B also includes a `mountpoint -q` check for safe re-runs.
+## Startup script (`scripts/startup.sh`)
 
-Sets `DEBIAN_FRONTEND=noninteractive` to avoid apt hangs. Uses APT lock timeout (`DPkg::Lock::Timeout=60`) to handle race conditions with `unattended-upgrades`. Adds Docker APT repo first, then does a single `apt-get update` + install for all packages. Has retry logic for network operations. Formats with lazy ext4 init for fast first-boot. Uses UUID-based fstab entries with retry logic for `blkid` (up to 10 attempts). Installs Docker, optionally installs RunTipi (downloads installer to file, no `curl|bash`), and optionally configures WireGuard client (fully non-fatal: both `systemctl enable --now` and `wg show` are guarded).
+**`compute.tf` carries `ignore_changes = [metadata["user_data"]]`, and
+cloud-init runs user_data once.** A script change therefore reaches new
+instances only. Anything existing users should apply by hand belongs in the
+CHANGELOG migration notes.
 
-### Tests (`tests/*.tftest.hcl`)
+Rendered through `templatefile()`, so every shell variable needs a matching
+Terraform variable in that call — add both together.
 
-Three test files using `mock_provider` (no real OCI credentials needed):
-- `defaults_unit_test.tftest.hcl` — Validates default values for instance, volume, network, and tags.
-- `validation_unit_test.tftest.hcl` — Exercises all `validation {}` blocks in `variables.tf` (invalid CIDRs, out-of-range OCPUs/memory, bad fault domains, etc.).
-- `network_unit_test.tftest.hcl` — Tests security rule generation for various ingress/egress combinations (Runtipi on/off, ping, custom rules, restricted egress).
+Two phases, because Terraform attaches the volume only after the instance
+reaches RUNNING and cloud-init would time out waiting:
 
-## CI/CD
+- **Phase A** (cloud-init): packages, Docker, SSH keys, timezone, OS tuning and
+  hardening (journald cap, SSH hardening, nofile and inotify limits, swap,
+  auto-reboot, fail2ban). Writes `/opt/mnt-data-setup.sh` and installs the
+  `mnt-data-setup.service` oneshot.
+- **Phase B** (that service): volume detection with exponential backoff up to
+  60 minutes, mount, a Docker systemd override so Docker waits for `/mnt/data`
+  on reboot, RunTipi and WireGuard. It re-declares `log()`, `log_error()`,
+  `cleanup()` and `retry()` because it runs as its own process.
 
-Two GitHub Actions workflows (`.github/workflows/`):
-- **terraform.yml**: Runs on push/PR to main and weekly. Installs OpenTofu via `opentofu/setup-opentofu` (version pinned in `env.OPENTOFU_VERSION`), then runs `make fmt-check`, `make validate`, `make tofu-test` and `make shellcheck` — all blocking. Uploads a Trivy config scan as SARIF to the GitHub Security tab (same job; skipped on fork PRs, which get no `security-events: write`). Posts a four-row results table as PR comment (Format, Validate, OpenTofu Test, Shellcheck), updating the existing comment. Uses concurrency control to cancel in-progress runs.
-- **documentation.yml**: On PRs touching `.tf` files, `terraform-docs/gh-actions` injects the generated docs into `README.md` and pushes the commit back to the PR branch; it also runs on push to `main`, which is what covers fork PRs (their `GITHUB_TOKEN` is read-only, so the job is skipped on the PR itself). This is the only terraform-docs mechanism — there is no drift check.
+Phase A must reach the service installation whatever happens, so every optional
+step is guarded and logs its failure instead of aborting. The completion marker
+`/var/log/.setup_script_completed` is written at the end of Phase B and drives
+the unit's `ConditionPathExists=!…` idempotency; Phase B also guards on
+`mountpoint -q`.
 
-## Dependencies
+`DEBIAN_FRONTEND=noninteractive` and `DPkg::Lock::Timeout=60` exist to survive
+`unattended-upgrades` races; the volume is mounted by UUID because device names
+are not stable; RunTipi installs from a downloaded file rather than a piped
+`curl`.
 
-Renovate (`renovate.json`) auto-updates: OCI provider version in `versions.tf`, GitHub Actions versions, and the `OPENTOFU_VERSION` pin in `.github/workflows/terraform.yml` via a custom regex manager.
+## Network
 
-## Variables
+`network.tf` assembles every security rule in `locals` — read those rather than
+the resource. OCI protocol identifiers are strings: `"1"` ICMP, `"6"` TCP,
+`"17"` UDP. The always-on ICMP type 3 code 4 rule is Path MTU Discovery, not
+ping; ping is `enable_ping`.
 
-Required (set in `terraform.tfvars` or `TF_VAR_*` env vars): `compartment_ocid`, `region` (no default — must be the tenancy home region), `tenancy_ocid`, `user_ocid`, `oracle_api_key_fingerprint`, `ssh_public_key`. See `terraform.tfvars.template` for the format.
+## Tests (`tests/*.tftest.hcl`)
 
-Notable optional: `acknowledge_billable_resources` (default: `false` — unlocks compute above the caps, storage above 200GB, and a non-home region), `install_runtipi` (default: `true`), `enable_ping` (default: `false`), `ssh_source_cidr` (default: `"0.0.0.0/0"`), `timezone` (default: `"Europe/Rome"`, IANA format), `custom_ingress_security_rules` (simplified: protocol + ports + source, all validated), `enable_unrestricted_egress` (default: `true` — all outbound allowed; set to `false` for restrictive egress), `egress_security_rules` (only used when unrestricted egress is disabled), `wireguard_client_configuration` (must start with `[Interface]` or be empty), `kms_key_id` for volume encryption, `freeform_tags` (default: `{ManagedBy=Terraform}`).
+Three files on `mock_provider`, so no OCI credentials: `defaults_`
+(default values), `validation_` (validation blocks plus the cap, home-region
+and auth preconditions), `network_` (rule generation across feature
+combinations).
+
+- **A new data source needs a `mock_data` entry in all three files**, and its
+  shape must match the provider schema exactly — every attribute of a nested
+  object included, or the run fails on `Invalid mock/override field`.
+- **`check` blocks are testable.** `tofu test` reports a failed assertion as a
+  run failure, so target it with `expect_failures = [check.always_free_caps]`.
+  Any run that deliberately exceeds a cap must list the check alongside the
+  precondition it expects.
+- **`region` has no default**, so every file's `variables` block sets it.
+
+## CI/CD and generated docs
+
+`.github/workflows/terraform.yml` runs `make fmt-check`, `validate`,
+`tofu-test`, `shellcheck` — all blocking — uploads a Trivy SARIF scan, and
+posts a four-row PR comment. `documentation.yml` runs `terraform-docs` on `.tf`
+PRs and pushes the result back to the branch.
+
+**terraform-docs owns the Requirements, Providers, Resources, Inputs and
+Outputs tables in `README.md`.** Edit `variables.tf` and let CI regenerate them.
+The exception is a fork PR: its `GITHUB_TOKEN` is read-only, the push is
+skipped, and the stale table ships until the merge to `main` — so for a change
+that alters a default or makes a variable required, update those rows by hand
+in the same commit.
+
+Renovate (`renovate.json`) bumps three things: the OCI provider in
+`versions.tf`, the GitHub Actions, and the `OPENTOFU_VERSION` pin in
+`terraform.yml`. The Ubuntu image OCIDs are **manual** — no manager matches
+them — and changing the base image means editing every one of the 35+ entries
+in `instance_image_ocids_by_region`.
+
+## Destroying
+
+`oci_core_volume.docker_volume` carries `prevent_destroy = true`. A teardown
+means removing that lifecycle rule or `tofu state rm` first — deliberately, since
+Always Free A1 capacity is often exhausted and a destroyed instance may not be
+recreatable at all.

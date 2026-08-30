@@ -192,14 +192,11 @@ rebuild it smaller may leave you with nothing.
 - `checks.tf`: Always Free cap and home-region logic — the region-subscriptions data source, the shared locals, and the advisory `check` block.
 - `outputs.tf`: Defines the outputs of the Terraform configuration.
 - `terraform.tfvars.template`: Template for user-specific variables.
-- `scripts/startup.sh`: Cloud-init script for initial setup. Features:
-    - Completion marker to prevent re-runs on reboot
-    - Retry logic for network operations and block volume attachment
-    - Auto-detects secondary block device with retry loop
-    - UUID-based fstab entries for reliable mounts across reboots
-    - APT lock timeout handling to avoid race conditions with unattended-upgrades
-    - Installs Docker and RunTipi (if enabled)
-    - Configures WireGuard client (if provided, non-fatal on failure)
+- `scripts/startup.sh`: Instance setup, in two phases. Terraform attaches the block volume only after the instance reaches RUNNING, which is later than cloud-init is willing to wait, so the work is split:
+    - **Phase A** (cloud-init): system packages, Docker, SSH keys, timezone, and OS tuning and hardening — journald size cap, SSH hardening, open-file and inotify limits, swapfile, optional automatic reboot, optional fail2ban. It then writes the Phase B script and installs it as a systemd oneshot service.
+    - **Phase B** (`mnt-data-setup.service`): detects the block volume with exponential backoff for up to 60 minutes, mounts it at `/mnt/data` by UUID, makes Docker wait for that mount on reboot, and installs RunTipi and the WireGuard client if enabled.
+    - Both phases are re-run safe: a completion marker written at the end of Phase B gates the service, and the mount is guarded by `mountpoint`. Optional steps log their failures instead of aborting, and network operations retry.
+    - Changes here reach **new instances only** — `compute.tf` ignores `user_data` changes, and cloud-init runs it once. Existing instances need the change applied by hand; the `CHANGELOG.md` migration notes say when.
 - `.github/workflows/`: Contains GitHub Actions workflows for CI/CD.
     - `documentation.yml`: Renders terraform-docs into `README.md` and commits it back to the PR branch.
     - `terraform.yml`: Runs fmt-check, validate, tofu-test and shellcheck, and uploads a Trivy config scan to the Security tab.

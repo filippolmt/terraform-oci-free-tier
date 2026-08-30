@@ -22,7 +22,7 @@ Individual targets:
 ```bash
 make fmt         # auto-format .tf files
 make fmt-check   # check formatting without modifying
-make validate    # tofu init -backend=false + tofu validate
+make validate    # tofu init -backend=false -upgrade + tofu validate
 make tofu-test   # OpenTofu native tests (mock provider, no OCI credentials needed)
 make shellcheck  # lint scripts/*.sh
 make clean       # remove .terraform/
@@ -38,5 +38,6 @@ tofu test -filter=tests/validation_unit_test.tftest.hcl
 ## Pull requests
 
 - `make test` must pass. The same checks run in CI (`.github/workflows/terraform.yml`) and post a results table on the pull request.
-- Do not hand-edit the terraform-docs block in `README.md` — `.github/workflows/documentation.yml` regenerates and commits it whenever a `.tf` file changes.
-- Note user-facing changes in `CHANGELOG.md` under `## [Unreleased]`.
+- Let `.github/workflows/documentation.yml` regenerate the terraform-docs tables in `README.md`; it commits them back whenever a `.tf` file changes. The exception is a pull request from a fork: its `GITHUB_TOKEN` cannot push, so the stale table ships until the merge to `main`. When a change alters a default or makes a variable required, update those rows by hand in the same commit.
+- Note user-facing changes in `CHANGELOG.md` under `## [Unreleased]`, creating that section if the last release closed it.
+- `CONTEXT.md` is the project glossary. Follow it for user-facing prose and error messages — it fixes which term to use for the Always Free resources, the account types, the caps and the home region, and lists the near-synonyms to avoid.

@@ -1,4 +1,4 @@
-# Test variable validation rules enforce Free Tier constraints and input formats
+# Test that validation rules and preconditions enforce the Always Free caps and input formats
 
 mock_provider "oci" {
   mock_data "oci_identity_availability_domain" {

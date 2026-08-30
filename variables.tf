@@ -150,7 +150,7 @@ variable "fault_domain" {
 
 variable "instance_shape" {
   type        = string
-  description = "The OCI compute shape (VM.Standard.A1.Flex for Free Tier ARM instances)"
+  description = "The OCI compute shape (VM.Standard.A1.Flex for Always Free ARM instances)"
   default     = "VM.Standard.A1.Flex"
 }
 

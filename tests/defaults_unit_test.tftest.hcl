@@ -1,4 +1,4 @@
-# Verify that default configuration produces expected Free Tier infrastructure
+# Verify that the default configuration lands on the Always Free allocation
 
 mock_provider "oci" {
   mock_data "oci_identity_availability_domain" {

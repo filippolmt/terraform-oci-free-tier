@@ -144,8 +144,10 @@ combinations).
 posts a four-row PR comment. `documentation.yml` runs `terraform-docs` on `.tf`
 PRs and pushes the result back to the branch.
 
-**terraform-docs owns the Requirements, Providers, Resources, Inputs and
-Outputs tables in `README.md`.** Edit `variables.tf` and let CI regenerate them.
+**terraform-docs owns everything between the `<!-- BEGIN_TF_DOCS -->` and
+`<!-- END_TF_DOCS -->` markers in `README.md`** — Requirements, Providers,
+Modules, Resources, Inputs, Outputs. Edit `variables.tf` and let CI regenerate
+them; rows are alphabetical, and a new data source gets a Resources row too.
 The exception is a fork PR: its `GITHUB_TOKEN` is read-only, the push is
 skipped, and the stale table ships until the merge to `main` — so for a change
 that alters a default or makes a variable required, update those rows by hand

@@ -25,11 +25,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
 
-      - name: Render terraform docs and push changes back to PR
-        uses: terraform-docs/gh-actions@v1.4.1
-        with:
-          working-dir: .
-          output-file: README.md
-          output-method: inject
-          git-push: "true"
-          git-commit-message: "docs: update terraform-docs"
+      - name: Render terraform docs
+        run: make docs
+
+      - name: Push changes back to PR
+        run: |
+          git diff --quiet README.md && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: update terraform-docs" README.md
+          git push

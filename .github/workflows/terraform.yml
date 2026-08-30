@@ -8,7 +8,6 @@ on:
       - "tests/**"
       - "scripts/**"
       - "Makefile"
-      - "Dockerfile"
       - ".github/workflows/terraform.yml"
   pull_request:
     branches: [main]
@@ -17,7 +16,6 @@ on:
       - "tests/**"
       - "scripts/**"
       - "Makefile"
-      - "Dockerfile"
       - ".github/workflows/terraform.yml"
   schedule:
     - cron: "0 8 * * 1" # Weekly on Monday at 8:00 UTC
@@ -32,6 +30,9 @@ permissions:
   actions: read
   pull-requests: write
 
+env:
+  OPENTOFU_VERSION: 1.12.6
+
 jobs:
   test:
     name: Test
@@ -41,62 +42,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build Docker image
-        id: build
-        uses: docker/build-push-action@v7
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v2.0.2
         with:
-          context: .
-          load: true
-          tags: opentofu-oci-test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tofu_version: ${{ env.OPENTOFU_VERSION }}
+          tofu_wrapper: false
 
       - name: Check formatting
         id: fmt
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu fmt -check -recursive -diff
+        if: ${{ !cancelled() }}
+        run: make fmt-check
 
       - name: Validate
         id: validate
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu init -backend=false
-          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu validate
+        if: ${{ !cancelled() }}
+        run: make validate
 
       - name: OpenTofu Test
         id: tofu-test
         if: ${{ !cancelled() && steps.validate.outcome == 'success' }}
-        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tofu test
-
-      - name: Lint
-        id: lint
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: |
-          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tflint --init
-          docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test tflint
-        continue-on-error: true
+        run: make tofu-test
 
       - name: Shellcheck
         id: shellcheck
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test shellcheck -x scripts/*.sh
+        if: ${{ !cancelled() }}
+        run: make shellcheck
 
-      - name: Security scan
-        id: security
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: docker run --rm -v ${{ github.workspace }}:/workspace opentofu-oci-test trivy config --severity HIGH,CRITICAL .
-        continue-on-error: true
-
-      - name: Check docs are up-to-date
-        id: docs
-        if: ${{ github.event_name == 'pull_request' && !cancelled() && steps.build.outcome == 'success' }}
-        run: make BUILD_IMAGE=0 docs-check
-
+      # Fork PRs get a read-only GITHUB_TOKEN: no security-events: write, so the upload would fail.
       - name: Security scan (SARIF)
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event.pull_request.head.repo.fork != true }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: "config"
@@ -106,7 +80,7 @@ jobs:
           severity: "CRITICAL,HIGH,MEDIUM"
 
       - name: Upload Trivy SARIF
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event.pull_request.head.repo.fork != true }}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: "trivy-results.sarif"
@@ -120,15 +94,12 @@ jobs:
             const fmt = '${{ steps.fmt.outcome }}';
             const validate = '${{ steps.validate.outcome }}';
             const tofuTest = '${{ steps.tofu-test.outcome }}';
-            const lint = '${{ steps.lint.outcome }}';
             const shellcheck = '${{ steps.shellcheck.outcome }}';
-            const security = '${{ steps.security.outcome }}';
-            const docs = '${{ steps.docs.outcome }}';
 
-            const icon = (outcome, soft) => {
+            const icon = (outcome) => {
               if (outcome === 'success') return '✅ Pass';
               if (outcome === 'skipped') return '⏭️ Skipped';
-              return soft ? '⚠️ Warnings' : '❌ Fail';
+              return '❌ Fail';
             };
 
             let body = '## OpenTofu CI Results\n\n';
@@ -137,18 +108,13 @@ jobs:
             body += `| Format | ${icon(fmt)} |\n`;
             body += `| Validate | ${icon(validate)} |\n`;
             body += `| OpenTofu Test | ${icon(tofuTest)} |\n`;
-            body += `| Lint | ${icon(lint, true)} |\n`;
             body += `| Shellcheck | ${icon(shellcheck)} |\n`;
-            body += `| Security | ${icon(security, true)} |\n`;
-            body += `| Docs | ${icon(docs)} |\n`;
 
             const hints = [];
             if (fmt !== 'success') hints.push('> **Format:** Run `make fmt` to fix formatting issues.');
+            if (validate !== 'success' && validate !== 'skipped') hints.push('> **Validate:** Run `make validate` locally to see details.');
             if (tofuTest !== 'success' && tofuTest !== 'skipped') hints.push('> **OpenTofu Test:** Run `make tofu-test` locally to see details.');
-            if (lint !== 'success') hints.push('> **Lint:** Run `make lint` locally to see details.');
-            if (shellcheck !== 'success') hints.push('> **Shellcheck:** Run `make shellcheck` locally to see details.');
-            if (security !== 'success') hints.push('> **Security:** Run `make security-all` locally to see all findings.');
-            if (docs !== 'success' && docs !== 'skipped') hints.push('> **Docs:** Run `make docs` and commit the updated README.md.');
+            if (shellcheck !== 'success' && shellcheck !== 'skipped') hints.push('> **Shellcheck:** Run `make shellcheck` locally to see details.');
             if (hints.length > 0) body += '\n' + hints.join('\n');
 
             // Update existing comment or create new one

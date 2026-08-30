@@ -1,3 +1,5 @@
+
+
 # Terraform OCI Free Tier
 
 This repository provides OpenTofu/Terraform configurations for deploying resources in the Oracle Cloud Infrastructure (OCI) Free Tier.
@@ -142,6 +144,7 @@ config_file_profile = "<your-session-profile>" # the profile created by `oci ses
     - Auto-detects secondary block device with retry loop
     - UUID-based fstab entries for reliable mounts across reboots
     - APT lock timeout handling to avoid race conditions with unattended-upgrades
+    - Removes the Oracle image catch-all firewall reject rules so OCI security list ingress rules are reachable
     - Installs Docker and RunTipi (if enabled)
     - Configures WireGuard client (if provided, non-fatal on failure)
 - `.github/workflows/`: Contains GitHub Actions workflows for CI/CD.

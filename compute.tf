@@ -92,5 +92,20 @@ resource "oci_core_instance" "instance" {
       )
       error_message = "auth_method = \"ApiKey\" requires tenancy_ocid, user_ocid and oracle_api_key_fingerprint to be set."
     }
+
+    # Always Free caps (ADR-0002). Refuse rather than warn: on a Free Tier
+    # account OCI rejects the instance anyway, and on a Pay-As-You-Go account
+    # the bill arrives silently.
+    precondition {
+      condition     = var.acknowledge_billable_resources || local.within_compute_caps
+      error_message = "This configuration asks for ${var.instance_shape_config_ocpus} OCPUs and ${var.instance_shape_config_memory_gb} GB, above the Always Free cap of 2 OCPUs / 12 GB. Lower instance_shape_config_ocpus and instance_shape_config_memory_gb, or set acknowledge_billable_resources = true to provision billable resources deliberately."
+    }
+
+    # Home region (ADR-0003). Outside it nothing is Always Free, so the cost is
+    # the whole deployment rather than the overage.
+    precondition {
+      condition     = var.acknowledge_billable_resources || local.region_is_home
+      error_message = "region is set to ${var.region}, which is not the tenancy home region (${join(", ", local.home_regions)}). Outside the home region the instance and all of its storage are billed at full price, with no Always Free allocation whatsoever. Set region to the home region, or set acknowledge_billable_resources = true."
+    }
   }
 }

@@ -37,5 +37,29 @@ compartment_ocid = ""
 # Format: ssh-rsa AAAAB3... user@host  or  ssh-ed25519 AAAAC3... user@host
 ssh_public_key = ""
 
-# Timezone — IANA timezone for the instance (default: Europe/Rome)
+# Region — must be your tenancy home region. OCI Console → the region menu in the
+# top bar shows it as "Home region". Always Free resources built anywhere else are
+# billed at full price, so the module refuses unless you acknowledge it below.
+# Format: eu-milan-1, us-ashburn-1, ...
+region = ""
+
+# --- Optional -----------------------------------------------------------------
+# The defaults below are the Always Free caps. They are the single source of
+# truth; uncomment a line only to deviate from it deliberately.
+
+# Timezone — IANA timezone for the instance
 # timezone = "Europe/Rome"
+
+# Instance sizing — the Always Free cap is 2 OCPUs and 12 GB of memory.
+# Anything above requires acknowledge_billable_resources = true.
+# instance_shape_config_ocpus     = 2
+# instance_shape_config_memory_gb = 12
+
+# Block storage — Always Free covers 200 GB total across the boot volume
+# (instance_shape_boot_volume_size_gb, 50 GB by default) and this one.
+# docker_volume_size_gb = 150
+
+# Set to true to provision resources outside the Always Free allocation:
+# compute above 2 OCPUs / 12 GB, more than 200 GB of storage, or a region other
+# than your home region. On a Pay-As-You-Go account these are billed.
+# acknowledge_billable_resources = false

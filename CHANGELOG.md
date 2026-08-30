@@ -5,10 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [5.0.0] - 2026-08-30
+
+> **Breaking.** The defaults now target Oracle's reduced Always Free allocation,
+> `region` is required, and `required_version` moves to `>= 1.6`. An apply that
+> was pinned to 4 OCPUs / 24 GB, or that builds outside the tenancy home region,
+> is blocked until `acknowledge_billable_resources = true` is set — even for an
+> unrelated change.
 
 ### Changed
 
+- **BREAKING — instance defaults lowered to the Always Free caps**: `instance_shape_config_ocpus` `4` → `2` and `instance_shape_config_memory_gb` `24` → `12`. On 15 June 2026 Oracle halved the Ampere A1 Compute allocation without an announcement, and instances above the new caps have been terminated. Callers who never pinned these variables get an in-place resize with a reboot on the next apply — not a replacement. The `validation` ceilings stay at 4 and 24 so an acknowledged caller can keep the old sizing. See [ADR 0002](docs/adr/0002-always-free-cap-reduction.md).
+- **BREAKING — `region` is now required**: the `eu-milan-1` default is gone. Always Free eligibility is scoped to the tenancy home region, and a default that is right for one region's worth of users is silently expensive for everyone else. See [ADR 0003](docs/adr/0003-require-explicit-home-region.md).
+- **BREAKING — `required_version` raised to `>= 1.6`**, the floor for `check` blocks.
+- **`swap_size_gb` defaults to `4`** (was `0`), offsetting the reduced memory cap. Set it back to `0` to disable swap. Swapfile creation in `scripts/startup.sh` is now non-fatal: with swap on by default, a boot volume too full to hold the file would otherwise abort the startup script before it installs `mnt-data-setup.service`, leaving the instance with no `/mnt/data` mount and no way to repair it from Terraform.
 - **Dropped the CI container image**: removed `Dockerfile`, `.dockerignore` and `.trivyignore`. `make` targets now invoke `tofu` and `shellcheck` directly, so local development needs only those two tools (both provided by the [toolbox](https://github.com/filippolmt/toolbox)). See [ADR 0001](docs/adr/0001-drop-ci-container-image.md).
 - **`Makefile` slimmed down**: targets are now `help`, `fmt`, `fmt-check`, `init`, `validate`, `tofu-test`, `shellcheck`, `test` and `clean`. `make init` now passes `-upgrade` so a provider bump in `versions.tf` cannot wedge a stale local `.terraform.lock.hcl`. The `build`, `shell`, `lint`, `security`, `security-all`, `docs`, `docs-check` and all `native-*` targets are gone, along with `BUILD_IMAGE`. `make clean` no longer deletes `.terraform.lock.hcl`.
 - **`terraform.yml`**: installs OpenTofu via `opentofu/setup-opentofu` with the version pinned in `env.OPENTOFU_VERSION`, and each step calls a `make` target. The Docker buildx/build-push steps and the `lint` and `docs-check` steps were removed; the Trivy SARIF upload to the GitHub Security tab stays, now skipped on fork PRs where `security-events: write` is not granted. The PR comment now reports four checks: Format, Validate, OpenTofu Test, Shellcheck.
@@ -21,8 +31,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`acknowledge_billable_resources`** (bool, default `false`): a single opt-in that unlocks all three ways out of the Always Free allocation — compute above 2 OCPUs / 12 GB, more than 200 GB of total block storage, and a region other than the tenancy home region. On a Pay-As-You-Go account these are billed; on a Free Tier account OCI refuses them.
+- **`checks.tf`**: the `data "oci_identity_region_subscriptions"` lookup, the shared Always Free locals, and a `check "always_free_caps"` block whose four assertions warn about the compute caps, the 200 GB storage cap, the home region, and the fact that an instance above the caps may not be recreatable once destroyed — Always Free Ampere A1 capacity is frequently exhausted.
+- **`precondition` blocks** enforcing the compute caps and the home region on `oci_core_instance.instance`, and the 200 GB storage cap on `oci_core_volume.docker_volume`. They refuse rather than warn: a `check` warning scrolls past, and a bill does not.
+- **README section "What can cost you money — or take your instance away"** covering the four failure modes together — exceeding a cap, building outside the home region, idle reclamation (seven days below 20% CPU, network and memory), and "out of host capacity" on recreation — plus the 10 TB/month egress allowance, bandwidth and VNIC count scaling with OCPUs, and the 2-VCN limit.
+- **Tests** for every new precondition, in both the blocked and the acknowledged direction, and for the case where `tenancy_ocid` is null and the home region cannot be read.
+- **`CONTEXT.md`** as the project glossary — Always Free, Free Trial, Free Tier account, Pay-As-You-Go account, Always Free cap, billable resource, home region, idle reclamation.
 - **`CONTRIBUTING.md`** documenting the local development setup and the available `make` targets.
-- **`docs/adr/0001-drop-ci-container-image.md`** recording the decision and its consequences.
+- **`docs/adr/0001-drop-ci-container-image.md`**, **`0002-always-free-cap-reduction.md`** and **`0003-require-explicit-home-region.md`** recording the decisions and their consequences.
+
+### Migration
+
+1. Set `region` in `terraform.tfvars` — it has no default. It must be your tenancy home region (OCI Console → region menu → "Home region").
+2. Run `tofu plan`. If it fails on a precondition, you are above a cap or outside your home region: either lower the sizing, or set `acknowledge_billable_resources = true` to accept the charges deliberately.
+3. If you never pinned the sizing variables, the plan shows an in-place resize to 2 OCPUs / 12 GB with a reboot. To keep 4 / 24, pin both variables **and** set `acknowledge_billable_resources = true`. Note that Oracle's documentation applies the new caps to Pay-As-You-Go tenancies too, and users on those accounts have reported billing alerts on a single 4/24 instance.
+4. The new `swap_size_gb = 4` default does **not** reach an existing instance. `user_data` runs only on first boot and `compute.tf` carries `ignore_changes = [metadata["user_data"]]`, so an upgraded instance loses 12 GB of RAM and gains no swap. Create the swapfile by hand if you want the offset:
+
+   ```bash
+   sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+   sudo mkswap /swapfile && sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+   echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-oci-free-tier-swap.conf
+   ```
+
+   The same applies to every other startup-script change: they only affect instances created from scratch.
 
 ## [4.2.0] - 2026-06-08
 

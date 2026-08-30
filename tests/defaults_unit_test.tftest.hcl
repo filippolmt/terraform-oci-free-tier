@@ -1,4 +1,4 @@
-# Verify that default configuration produces expected Free Tier infrastructure
+# Verify that the default configuration lands on the Always Free allocation
 
 mock_provider "oci" {
   mock_data "oci_identity_availability_domain" {
@@ -13,6 +13,17 @@ mock_provider "oci" {
       }]
     }
   }
+  mock_data "oci_identity_region_subscriptions" {
+    defaults = {
+      region_subscriptions = [{
+        is_home_region = true
+        region_key     = "LIN"
+        region_name    = "eu-milan-1"
+        state          = "READY"
+        tenancy_id     = "ocid1.tenancy.oc1..mock"
+      }]
+    }
+  }
 }
 
 variables {
@@ -21,6 +32,7 @@ variables {
   user_ocid                  = "ocid1.user.oc1..mock"
   oracle_api_key_fingerprint = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
   ssh_public_key             = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest mock@test"
+  region                     = "eu-milan-1"
 }
 
 run "default_instance_config" {
@@ -32,13 +44,13 @@ run "default_instance_config" {
   }
 
   assert {
-    condition     = oci_core_instance.instance.shape_config[0].ocpus == 4
-    error_message = "Default OCPUs should be 4"
+    condition     = oci_core_instance.instance.shape_config[0].ocpus == 2
+    error_message = "Default OCPUs should be 2 (Always Free cap)"
   }
 
   assert {
-    condition     = oci_core_instance.instance.shape_config[0].memory_in_gbs == 24
-    error_message = "Default memory should be 24GB"
+    condition     = oci_core_instance.instance.shape_config[0].memory_in_gbs == 12
+    error_message = "Default memory should be 12GB (Always Free cap)"
   }
 
   assert {
@@ -100,14 +112,15 @@ run "default_network_config" {
   }
 }
 
-run "os_tuning_defaults_disabled" {
+run "os_tuning_defaults" {
   command = plan
 
-  # OS-tuning behavior-changing options default to off, preserving prior behavior.
   assert {
-    condition     = var.swap_size_gb == 0
-    error_message = "Swap should be disabled by default (swap_size_gb = 0)"
+    condition     = var.swap_size_gb == 4
+    error_message = "Swap should default to 4GB, offsetting the reduced Always Free memory cap"
   }
+
+  # The remaining OS-tuning options default to off, preserving prior behavior.
 
   assert {
     condition     = var.enable_auto_reboot == false

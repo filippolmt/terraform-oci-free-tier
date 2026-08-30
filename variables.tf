@@ -61,8 +61,8 @@ variable "user_ocid" {
 
 variable "region" {
   type        = string
-  description = "The OCI region to deploy resources"
-  default     = "eu-milan-1"
+  description = "The OCI region to deploy resources. Must be the tenancy home region: Always Free eligibility is scoped to it, and instances and volumes built anywhere else are billed at full price. Building outside it requires acknowledge_billable_resources."
+  nullable    = false
 
   validation {
     condition = contains([
@@ -150,29 +150,29 @@ variable "fault_domain" {
 
 variable "instance_shape" {
   type        = string
-  description = "The OCI compute shape (VM.Standard.A1.Flex for Free Tier ARM instances)"
+  description = "The OCI compute shape (VM.Standard.A1.Flex for Always Free ARM instances)"
   default     = "VM.Standard.A1.Flex"
 }
 
 variable "instance_shape_config_memory_gb" {
   type        = number
-  description = "The amount of memory in GBs for the instance"
-  default     = 24
+  description = "The amount of memory in GBs for the instance. The Always Free cap is 12 GB; anything above it requires acknowledge_billable_resources."
+  default     = 12
 
   validation {
     condition     = var.instance_shape_config_memory_gb >= 1 && var.instance_shape_config_memory_gb <= 24
-    error_message = "Free Tier: max 24GB RAM for VM.Standard.A1.Flex."
+    error_message = "The Always Free cap is 12GB RAM for VM.Standard.A1.Flex. Up to 24GB is allowed with acknowledge_billable_resources = true; above 24GB the module refuses outright."
   }
 }
 
 variable "instance_shape_config_ocpus" {
   type        = number
-  description = "The number of OCPUs for the instance"
-  default     = 4
+  description = "The number of OCPUs for the instance. The Always Free cap is 2 OCPUs; anything above it requires acknowledge_billable_resources."
+  default     = 2
 
   validation {
     condition     = var.instance_shape_config_ocpus >= 1 && var.instance_shape_config_ocpus <= 4
-    error_message = "Free Tier: max 4 OCPUs for VM.Standard.A1.Flex."
+    error_message = "The Always Free cap is 2 OCPUs for VM.Standard.A1.Flex. Up to 4 is allowed with acknowledge_billable_resources = true; above 4 the module refuses outright."
   }
 }
 
@@ -196,6 +196,13 @@ variable "docker_volume_size_gb" {
     condition     = var.docker_volume_size_gb >= 50
     error_message = "Block volume minimum is 50GB."
   }
+}
+
+variable "acknowledge_billable_resources" {
+  type        = bool
+  description = "Acknowledge that the configuration provisions resources outside the Always Free allocation. Unlocks three things: compute above 2 OCPUs / 12 GB, more than 200 GB of total block storage, and a region other than the tenancy home region. On a Pay-As-You-Go account these are billed; on a Free Tier account they are refused by OCI."
+  default     = false
+  nullable    = false
 }
 
 variable "install_runtipi" {
@@ -428,8 +435,8 @@ variable "wireguard_client_configuration" {
 
 variable "swap_size_gb" {
   type        = number
-  description = "Size in GB of an optional swapfile created on the boot disk (/swapfile). 0 disables swap (default). When > 0, vm.swappiness=10 is also applied."
-  default     = 0
+  description = "Size in GB of an optional swapfile created on the boot disk (/swapfile). 0 disables swap. When > 0, vm.swappiness=10 is also applied. Defaults to 4 GB, which offsets the reduced Always Free memory cap."
+  default     = 4
 
   validation {
     condition     = var.swap_size_gb >= 0

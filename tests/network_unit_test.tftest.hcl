@@ -13,6 +13,17 @@ mock_provider "oci" {
       }]
     }
   }
+  mock_data "oci_identity_region_subscriptions" {
+    defaults = {
+      region_subscriptions = [{
+        is_home_region = true
+        region_key     = "LIN"
+        region_name    = "eu-milan-1"
+        state          = "READY"
+        tenancy_id     = "ocid1.tenancy.oc1..mock"
+      }]
+    }
+  }
 }
 
 variables {
@@ -21,6 +32,7 @@ variables {
   user_ocid                  = "ocid1.user.oc1..mock"
   oracle_api_key_fingerprint = "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
   ssh_public_key             = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest mock@test"
+  region                     = "eu-milan-1"
 }
 
 # Default: RunTipi enabled, ping disabled, unrestricted egress

@@ -1,5 +1,14 @@
 {
+  "extraKnownMarketplaces": {
+    "filippo-skills": {
+      "source": {
+        "source": "github",
+        "repo": "filippolmt/skills"
+      }
+    }
+  },
   "enabledPlugins": {
-    "claude-mem@thedotmack": true
+    "terraform-skill@filippo-skills": true,
+    "shell-scripting@filippo-skills": true
   }
 }

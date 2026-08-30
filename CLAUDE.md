@@ -6,41 +6,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Terraform module for deploying Oracle Cloud Infrastructure (OCI) Free Tier resources. Provisions an ARM-based VM (VM.Standard.A1.Flex) with Docker, optional RunTipi homeserver, and optional WireGuard VPN client.
 
-**Current version: 4.0.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v3.x.
+**Current version: 4.2.0** - See [CHANGELOG.md](CHANGELOG.md) for breaking changes from v3.x.
 
 ## Commands
 
 ```bash
-# All testing runs through Docker via Makefile
-make test           # Run all checks: fmt-check → validate → tofu-test → lint → shellcheck → security
+# Requires tofu and shellcheck on PATH (see CONTRIBUTING.md)
+make test           # Run all checks: fmt-check → validate → tofu-test → shellcheck
 make fmt            # Auto-format .tf files
-make docs           # Regenerate README.md terraform-docs section
-make shell          # Interactive shell in test container
-make clean          # Remove Docker image and .terraform/
+make clean          # Remove .terraform/
 make help           # Show all available targets
 
-# Individual checks (each auto-builds the Docker image)
+# Individual checks
 make fmt-check      # Check formatting without modifying
+make init           # tofu init -backend=false
 make validate       # Init + validate only
 make tofu-test      # Run OpenTofu native tests only
-make lint           # Run tflint only
 make shellcheck     # Lint shell scripts only
-make security       # Trivy scan (HIGH,CRITICAL only)
-make security-all   # Trivy scan (all severities)
 
-# Run a single test file (inside Docker shell or natively)
+# Run a single test file
 tofu test -filter=tests/validation_unit_test.tftest.hcl
-
-# Native equivalents (requires local tofu, tflint, trivy)
-make native-test
 
 # Direct OpenTofu commands (require terraform.tfvars)
 tofu init && tofu plan
 ```
 
+terraform-docs and Trivy run only in CI — there is no local target for either. tflint is not used at all. See `docs/adr/0001-drop-ci-container-image.md`.
+
 ## Architecture
 
-Requires OpenTofu/Terraform `>= 1.3` with OCI provider pinned to `8.2.0` (strict, managed by Renovate).
+Requires OpenTofu/Terraform `>= 1.3` with OCI provider pinned to `8.17.0` (strict, managed by Renovate).
 
 Infrastructure is split into domain-specific files (no submodules): `network.tf` (VCN, Subnet, Internet Gateway, Route Table, Security List), `compute.tf` (Instance, Public IP, data sources), and `storage.tf` (Block Volume, Volume Attachment, Backup Policy). The module creates a compute instance (ARM64, 4 OCPUs, 24GB RAM), a separate block volume (150GB) for Docker data mounted at `/mnt/data`, a reserved public IP, and a daily backup policy (3-day retention to stay within Free Tier's 5-backup limit).
 
@@ -79,12 +74,12 @@ Three test files using `mock_provider` (no real OCI credentials needed):
 ## CI/CD
 
 Two GitHub Actions workflows (`.github/workflows/`):
-- **terraform.yml**: Runs on push/PR to main and weekly. Builds the Docker test image, then runs fmt-check, validate, lint, shellcheck, and security scan. Format, validate, and shellcheck are blocking; lint and security use `continue-on-error`. Checks docs drift on PRs. Posts a results table as PR comment (updates existing comment). Uses concurrency control to cancel in-progress runs. A separate job uploads Trivy SARIF to GitHub Security tab.
-- **documentation.yml**: Auto-generates terraform-docs on PRs when `.tf` files change.
+- **terraform.yml**: Runs on push/PR to main and weekly. Installs OpenTofu via `opentofu/setup-opentofu` (version pinned in `env.OPENTOFU_VERSION`), then runs `make fmt-check`, `make validate`, `make tofu-test` and `make shellcheck` — all blocking. Uploads a Trivy config scan as SARIF to the GitHub Security tab (same job; skipped on fork PRs, which get no `security-events: write`). Posts a four-row results table as PR comment (Format, Validate, OpenTofu Test, Shellcheck), updating the existing comment. Uses concurrency control to cancel in-progress runs.
+- **documentation.yml**: On PRs touching `.tf` files, `terraform-docs/gh-actions` injects the generated docs into `README.md` and pushes the commit back to the PR branch; it also runs on push to `main`, which is what covers fork PRs (their `GITHUB_TOKEN` is read-only, so the job is skipped on the PR itself). This is the only terraform-docs mechanism — there is no drift check.
 
 ## Dependencies
 
-Renovate (`renovate.json`) auto-updates: OCI provider version in `versions.tf`, GitHub Actions versions, and Dockerfile tool versions (OpenTofu, terraform-docs, tflint, Trivy) via custom regex managers.
+Renovate (`renovate.json`) auto-updates: OCI provider version in `versions.tf`, GitHub Actions versions, and the `OPENTOFU_VERSION` pin in `.github/workflows/terraform.yml` via a custom regex manager.
 
 ## Variables
 

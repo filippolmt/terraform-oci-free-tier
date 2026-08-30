@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Dropped the CI container image**: removed `Dockerfile`, `.dockerignore` and `.trivyignore`. `make` targets now invoke `tofu` and `shellcheck` directly, so local development needs only those two tools (both provided by the [toolbox](https://github.com/filippolmt/toolbox)). See [ADR 0001](docs/adr/0001-drop-ci-container-image.md).
+- **`Makefile` slimmed down**: targets are now `help`, `fmt`, `fmt-check`, `init`, `validate`, `tofu-test`, `shellcheck`, `test` and `clean`. `make init` now passes `-upgrade` so a provider bump in `versions.tf` cannot wedge a stale local `.terraform.lock.hcl`. The `build`, `shell`, `lint`, `security`, `security-all`, `docs`, `docs-check` and all `native-*` targets are gone, along with `BUILD_IMAGE`. `make clean` no longer deletes `.terraform.lock.hcl`.
+- **`terraform.yml`**: installs OpenTofu via `opentofu/setup-opentofu` with the version pinned in `env.OPENTOFU_VERSION`, and each step calls a `make` target. The Docker buildx/build-push steps and the `lint` and `docs-check` steps were removed; the Trivy SARIF upload to the GitHub Security tab stays, now skipped on fork PRs where `security-events: write` is not granted. The PR comment now reports four checks: Format, Validate, OpenTofu Test, Shellcheck.
+- **`documentation.yml`**: uses `terraform-docs/gh-actions` (`output-method: inject`, `git-push: true`) instead of `make docs`, and now also runs on push to `main` so PRs from forks — where the read-only `GITHUB_TOKEN` cannot push — still get their docs rendered after the merge.
+- **`renovate.json`**: dropped the Dockerfile package rules and the `terraform-docs`/`tflint`/`Trivy` custom managers. The OpenTofu custom manager now tracks `OPENTOFU_VERSION` in `.github/workflows/terraform.yml`.
+
+### Removed
+
+- **tflint**: no longer part of the toolchain. It ran with `continue-on-error` in CI and its findings overlapped with `tofu validate`.
+
+### Added
+
+- **`CONTRIBUTING.md`** documenting the local development setup and the available `make` targets.
+- **`docs/adr/0001-drop-ci-container-image.md`** recording the decision and its consequences.
+
 ## [4.2.0] - 2026-06-08
 
 ### Added

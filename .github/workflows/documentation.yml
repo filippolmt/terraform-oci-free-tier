@@ -1,16 +1,19 @@
 name: Generate terraform docs
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "*.tf"
+      - ".github/workflows/documentation.yml"
   pull_request:
     branches: [main]
     paths:
       - "*.tf"
-      - "Makefile"
-      - "Dockerfile"
       - ".github/workflows/documentation.yml"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -19,21 +22,22 @@ permissions:
 
 jobs:
   docs:
+    # Fork PRs get a read-only GITHUB_TOKEN, so git-push cannot work there.
+    # The push-to-main run picks those up after the merge.
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Render terraform docs
-        run: make docs
-
-      - name: Push changes back to PR
-        run: |
-          git diff --quiet README.md && exit 0
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "docs: update terraform-docs" README.md
-          git push
+        uses: terraform-docs/gh-actions@v1.4.1
+        with:
+          working-dir: .
+          output-file: README.md
+          output-method: inject
+          git-push: true
+          git-commit-message: "docs: update terraform-docs"

@@ -1,111 +1,42 @@
-.PHONY: help build fmt fmt-check init validate tofu-test lint shellcheck security docs docs-check test clean shell
+.PHONY: help fmt fmt-check init validate tofu-test shellcheck test clean
 
-# Docker image name
-IMAGE_NAME := opentofu-oci-test
-DOCKER_RUN := docker run --rm -v $(PWD):/workspace $(IMAGE_NAME)
-
-# Colors for output
 GREEN  := \033[0;32m
 YELLOW := \033[0;33m
-RED    := \033[0;31m
-NC     := \033[0m # No Color
+NC     := \033[0m
 
 help: ## Show this help
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
-# Set BUILD_IMAGE=0 when the image already exists (CI builds it once with buildx)
-BUILD_IMAGE ?= 1
-
-build: ## Build the Docker image
-ifeq ($(BUILD_IMAGE),1)
-	@echo "$(GREEN)Building Docker image...$(NC)"
-	docker build -t $(IMAGE_NAME) .
-endif
-
-fmt: build ## Format OpenTofu files
+fmt: ## Format OpenTofu files
 	@echo "$(GREEN)Formatting OpenTofu files...$(NC)"
-	$(DOCKER_RUN) tofu fmt -recursive
+	tofu fmt -recursive
 
-fmt-check: build ## Check OpenTofu formatting
+fmt-check: ## Check OpenTofu formatting
 	@echo "$(GREEN)Checking OpenTofu formatting...$(NC)"
-	$(DOCKER_RUN) tofu fmt -check -recursive -diff
+	tofu fmt -check -recursive -diff
 
-init: build ## Initialize OpenTofu
+init: ## Initialize OpenTofu (no backend, refreshing the provider lock)
 	@echo "$(GREEN)Initializing OpenTofu...$(NC)"
-	$(DOCKER_RUN) tofu init -backend=false
+	tofu init -backend=false -upgrade
 
 validate: init ## Validate OpenTofu configuration
 	@echo "$(GREEN)Validating OpenTofu configuration...$(NC)"
-	$(DOCKER_RUN) tofu validate
+	tofu validate
 
 tofu-test: init ## Run OpenTofu native tests
 	@echo "$(GREEN)Running OpenTofu native tests...$(NC)"
-	$(DOCKER_RUN) tofu test
-
-lint: build ## Run tflint
-	@echo "$(GREEN)Running tflint...$(NC)"
-	$(DOCKER_RUN) tflint --init
-	$(DOCKER_RUN) tflint
-
-shellcheck: build ## Lint shell scripts with shellcheck
-	@echo "$(GREEN)Running shellcheck...$(NC)"
-	$(DOCKER_RUN) shellcheck -x scripts/*.sh
-
-security: build ## Run Trivy security scan
-	@echo "$(GREEN)Running Trivy security scan...$(NC)"
-	$(DOCKER_RUN) trivy config --severity HIGH,CRITICAL .
-
-security-all: build ## Run Trivy security scan (all severities)
-	@echo "$(GREEN)Running Trivy security scan (all severities)...$(NC)"
-	$(DOCKER_RUN) trivy config .
-
-docs: build ## Generate terraform-docs
-	@echo "$(GREEN)Generating terraform-docs...$(NC)"
-	$(DOCKER_RUN) terraform-docs markdown table --output-file README.md --output-mode inject .
-
-docs-check: docs ## Check if terraform-docs is up-to-date
-	@echo "$(GREEN)Checking if docs are up-to-date...$(NC)"
-	@git diff --exit-code README.md || (echo "$(RED)README.md is out of date. Run 'make docs' and commit.$(NC)" && exit 1)
-
-test: fmt-check validate tofu-test lint shellcheck security ## Run all tests
-	@echo "$(GREEN)All tests passed!$(NC)"
-
-clean: ## Clean up Docker image and OpenTofu files
-	@echo "$(YELLOW)Cleaning up...$(NC)"
-	docker rmi $(IMAGE_NAME) 2>/dev/null || true
-	rm -rf .terraform
-	rm -f .terraform.lock.hcl
-
-shell: build ## Open a shell in the Docker container
-	@echo "$(GREEN)Opening shell in container...$(NC)"
-	docker run --rm -it -v $(PWD):/workspace $(IMAGE_NAME) /bin/bash
-
-# Native targets (without Docker)
-.PHONY: native-fmt native-validate native-tofu-test native-lint native-shellcheck native-security native-test
-
-native-fmt: ## Format OpenTofu files (native)
-	tofu fmt -recursive
-
-native-validate: ## Validate OpenTofu configuration (native)
-	tofu init -backend=false
-	tofu validate
-
-native-tofu-test: ## Run OpenTofu native tests (native)
-	@echo "$(GREEN)Running OpenTofu native tests (native)...$(NC)"
 	tofu test
 
-native-lint: ## Run tflint (native)
-	tflint --init
-	tflint
-
-native-shellcheck: ## Lint shell scripts (native)
+shellcheck: ## Lint shell scripts with shellcheck
+	@echo "$(GREEN)Running shellcheck...$(NC)"
 	shellcheck -x scripts/*.sh
 
-native-security: ## Run Trivy security scan (native)
-	trivy config --severity HIGH,CRITICAL .
+test: fmt-check validate tofu-test shellcheck ## Run all checks
+	@echo "$(GREEN)All checks passed!$(NC)"
 
-native-test: native-fmt native-validate native-tofu-test native-lint native-shellcheck native-security ## Run all tests (native)
-	@echo "$(GREEN)All tests passed!$(NC)"
+clean: ## Remove OpenTofu working files
+	@echo "$(YELLOW)Cleaning up...$(NC)"
+	rm -rf .terraform

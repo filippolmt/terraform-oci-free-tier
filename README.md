@@ -33,6 +33,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history, breaking changes, and migr
 - [OpenTofu](https://opentofu.org/docs/intro/install/) (recommended) or [Terraform](https://developer.hashicorp.com/terraform/install) installed on your local machine.
 - An Oracle Cloud Infrastructure (OCI) account.
 - OCI CLI configured with your credentials.
+- To work on the module itself: `tofu` and `shellcheck` (both provided by the [toolbox](https://github.com/filippolmt/toolbox)). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Setup
 
@@ -145,8 +146,8 @@ config_file_profile = "<your-session-profile>" # the profile created by `oci ses
     - Installs Docker and RunTipi (if enabled)
     - Configures WireGuard client (if provided, non-fatal on failure)
 - `.github/workflows/`: Contains GitHub Actions workflows for CI/CD.
-    - `documentation.yml`: Auto-generates terraform-docs on PRs.
-    - `terraform.yml`: Runs fmt-check, validate, lint, shellcheck, security scan, and docs-check on PRs.
+    - `documentation.yml`: Renders terraform-docs into `README.md` and commits it back to the PR branch.
+    - `terraform.yml`: Runs fmt-check, validate, tofu-test and shellcheck, and uploads a Trivy config scan to the Security tab.
 
 ## Security Configuration
 

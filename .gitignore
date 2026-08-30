@@ -44,3 +44,5 @@ oracle
 .toolbox.yaml
 openspec*
 opsx*
+
+.mode-router/

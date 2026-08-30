@@ -1,4 +1,4 @@
-FROM alpine:3.23 AS downloader
+FROM alpine:3.24 AS downloader
 
 ARG TARGETARCH
 ARG OPENTOFU_VERSION=1.12.1
@@ -31,7 +31,7 @@ RUN ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "ARM64" || echo "64bit") && \
     tar -xz -C /usr/local/bin trivy
 
 # --- Final stage: only runtime dependencies + tool binaries ---
-FROM alpine:3.23
+FROM alpine:3.24
 
 RUN apk add --no-cache \
     bash \

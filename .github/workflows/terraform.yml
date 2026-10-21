@@ -31,7 +31,7 @@ permissions:
   pull-requests: write
 
 env:
-  OPENTOFU_VERSION: 1.12.6
+  OPENTOFU_VERSION: 1.13.2
 
 jobs:
   test:
